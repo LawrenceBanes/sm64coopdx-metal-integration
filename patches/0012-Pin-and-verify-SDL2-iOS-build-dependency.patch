@@ -1,7 +1,7 @@
 From 8c639168b57de6751cbcee44374e6a362e74facd Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 18:23:39 -0600
-Subject: [PATCH 12/13] Pin and verify SDL2 iOS build dependency
+Subject: [PATCH 12/14] Pin and verify SDL2 iOS build dependency
 
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt

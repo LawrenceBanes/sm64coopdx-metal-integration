@@ -1,7 +1,7 @@
 From 9d32baa8ec2c0b5cbad2cdbca578fe1d7e974426 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 17:37:20 -0600
-Subject: [PATCH 06/13] Add initial CoopDX iOS Metal rendering backend
+Subject: [PATCH 06/14] Add initial CoopDX iOS Metal rendering backend
 
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt

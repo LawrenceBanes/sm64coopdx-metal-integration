@@ -1,7 +1,7 @@
 From fd2c768729b60f926382086b50f25b97c60b725d Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 17:43:20 -0600
-Subject: [PATCH 11/13] Record latest Mission 02 handoff commit
+Subject: [PATCH 11/14] Record latest Mission 02 handoff commit
 
 
 diff --git a/HANDOFF.md b/HANDOFF.md

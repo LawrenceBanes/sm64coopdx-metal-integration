@@ -1,7 +1,7 @@
 From 1664cd7b1650e0051b70864c5447d5a51441cee8 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 17:41:20 -0600
-Subject: [PATCH 08/13] Preserve CoopDX world flags and texture filtering in
+Subject: [PATCH 08/14] Preserve CoopDX world flags and texture filtering in
  Metal shaders
 
 

@@ -1,7 +1,7 @@
 From e2f34a459ad2e991a8303ade3871aee196b06eae Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 16:23:33 -0600
-Subject: [PATCH 03/13] Install root-layout Lua ZIPs as named mods
+Subject: [PATCH 03/14] Install root-layout Lua ZIPs as named mods
 
 
 diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md

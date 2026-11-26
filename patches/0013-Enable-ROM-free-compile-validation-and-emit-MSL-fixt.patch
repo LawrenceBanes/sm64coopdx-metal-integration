@@ -1,7 +1,7 @@
 From e6a754d251095612e0f875754f002357c55ce4c8 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 18:34:29 -0600
-Subject: [PATCH 13/13] Enable ROM-free compile validation and emit MSL
+Subject: [PATCH 13/14] Enable ROM-free compile validation and emit MSL
  fixtures
 
 

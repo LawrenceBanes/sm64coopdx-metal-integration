@@ -1,7 +1,7 @@
 From 2def50bc414a0cca103f8eeebbf3e8cc6ea71944 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 16:15:24 -0600
-Subject: [PATCH 01/13] Add iOS mod ZIP import and archive safeguards
+Subject: [PATCH 01/14] Add iOS mod ZIP import and archive safeguards
 
 
 diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md

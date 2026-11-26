@@ -1,7 +1,7 @@
 From 36fd9adb443b2c31485516250eb9212206b49111 Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 17:21:01 -0600
-Subject: [PATCH 05/13] Add CoopDX color combiner to Metal shader adapter
+Subject: [PATCH 05/14] Add CoopDX color combiner to Metal shader adapter
 
 
 diff --git a/HANDOFF.md b/HANDOFF.md

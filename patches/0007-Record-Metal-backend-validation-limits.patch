@@ -1,7 +1,7 @@
 From 1652a74aedab1a38e2966e5e8acd0b67d19ba7ca Mon Sep 17 00:00:00 2001
 From: Codex <codex@localhost>
 Date: Wed, 25 Nov 2026 17:37:44 -0600
-Subject: [PATCH 07/13] Record Metal backend validation limits
+Subject: [PATCH 07/14] Record Metal backend validation limits
 
 
 diff --git a/HANDOFF.md b/HANDOFF.md
