@@ -18,3 +18,4 @@ ecb90c11c4b7af1e5dcf81ce786967bc639469d76ddea1a2620b41170723542a  ./0017-Record-
 7b5cedd01b223b3383ce02ef3bf5c334355843e61558d169d4190714b43ce5d0  0018-Fix-iOS-Metal-SDK-API-usage.patch
 e9b248c861b85ac88ca5c63d43565991daedcc8dc56529f7fd9f54626d84c569  0019-Make-Metal-object-cache-ARC-safe.patch
 ca65fe487e222484b88a415f73b0c2df52a0a8f7f838cc125cb02a71c88f69f3  0020-Sync-Mission-06-integration-source-and-validation.patch
+f9c2354f616fe523d4c28fcf57f8ad93c7a72777f13dc2b88dd1a1f7ef27f3e9  0021-Record-final-Mission-06-overlay-checkpoint.patch

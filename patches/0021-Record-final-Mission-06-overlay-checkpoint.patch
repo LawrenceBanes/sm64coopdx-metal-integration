@@ -1,0 +1,62 @@
+From fd96e05cd9fa54d0b389a41c843268a79ccc5ef7 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:20:11 -0600
+Subject: [PATCH] Record final Mission 06 overlay checkpoint
+
+---
+ HANDOFF.md             | 2 +-
+ MISSION_06_PROGRESS.md | 5 +++--
+ VALIDATION.md          | 1 +
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 34a5ea8f..7978c51b 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -2,7 +2,7 @@
+ 
+ ## Current Mission 06 status
+ 
+-Mission 06 is **partial**. Public Apple CI now compiles and links the independently authored Metal adapter, SDL bridge, pinned SDL2, and generated MSL fixtures against iPhoneOS SDK using stub game interfaces. It has not built the complete CoopDX app or produced an IPA. The full source has no identified redistribution license, private GitHub Actions are blocked by the account spending restriction, and no Mac host is available in the current Tailscale/local environment. See [MISSION_06_PROGRESS.md](MISSION_06_PROGRESS.md) for current commit, run, exact tests, and next steps.
++Mission 06 is **partial**. Public Apple CI run [45746850842](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842) compiles and links the independently authored Metal adapter, SDL bridge, pinned SDL2, and generated MSL fixtures against iPhoneOS SDK using stub game interfaces. Private overlay commit `7bbb7c6` reproduces the integration tree and passes Linux build/tests. The full app has not been Apple-compiled or packaged as an IPA. The full source has no identified redistribution license, private GitHub Actions are blocked by the account spending restriction, and the tailnet has no reachable Mac host. See [MISSION_06_PROGRESS.md](MISSION_06_PROGRESS.md) for exact commits, artifact hashes, tests, and next steps.
+ 
+ Project: `/home/larry/Projects/sm64coopdx-metal`  
+ Branch: `mission-03-04-metal-first-light-parity`
+diff --git a/MISSION_06_PROGRESS.md b/MISSION_06_PROGRESS.md
+index 054feb91..e6374838 100644
+--- a/MISSION_06_PROGRESS.md
++++ b/MISSION_06_PROGRESS.md
+@@ -9,7 +9,8 @@
+ - Integration source: `/home/larry/Projects/sm64coopdx-metal`
+ - Integration branch: `mission-03-04-metal-first-light-parity`
+ - Latest local integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`); current branch HEAD is `712b6edc` (documentation checkpoint). This branch has only the `upstream` remote; do not push it to upstream.
+-- Private overlay: `/home/larry/Projects/sm64coopdx-metal-overlay`, local commit `a67c956` contains the Apple SDK and ARC fixes and materializes the validated source tree. It is one commit ahead of its private GitHub branch; it was not pushed because doing so would trigger the private Actions workflow while the billing restriction remains.
++- Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`, commit `7bbb7c6` (`Record Mission 06 Apple validation in private overlay`). It includes Apple SDK/ARC fixes and the materialization integrity update. Push triggers are disabled in its private workflow, so this update did not start a private Actions job.
++- `materialize.sh /tmp/mission06-materialized-final` passed and verified source tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations.
+ - Public, source-only component harness: [LawrenceBanes/sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
+ - Latest public harness commit: `0c426ac76bd3a594f2aa47221e51c257164b80dd` (`Include the linked ARM64 Metal harness in CI artifacts`).
+ - Verification run for corrected artifact path: [45746850842](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842) — passed.
+@@ -56,7 +57,7 @@ Therefore Mission 06's primary target (complete Apple app build and private IPA)
+ 
+ ## Next actions
+ 
+-1. The component artifact is downloaded and its checksum manifest is verified; retain this as component-only evidence.
++1. The component artifact is downloaded and its checksum manifest is verified; retain this as component-only evidence. The workflow ran seven Python contract tests and the SDL bridge test in normal and sanitized configurations.
+ 2. Continue source-only checks that do not expose the unlicensed full engine or consume paid runners. A complete build needs an already-authorized Apple host and a lawful source route; do not send the private source through public Actions.
+ 3. If a Mac becomes available, run the private overlay build, package and validate the IPA locally, then publish only to the private release. Keep ROM and game data local.
+ 
+diff --git a/VALIDATION.md b/VALIDATION.md
+index baa74ad6..b18183d7 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -7,6 +7,7 @@
+ - Earlier run `45746603843` passed the same workflow but omitted the dylib from artifact upload; the corrected path is validated in `45746850842`.
+ - Apple compiler: Xcode 16.4 build 16F6, iPhoneOS SDK 18.5, macOS 15 ARM64.
+ - This is component-level validation only. Full game ABI, complete iOS app compile/link, IPA packaging, LiveContainer launch, Metal GPU execution, and device rendering remain unverified.
++- Private overlay commit `7bbb7c6` reproduces source tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; clean materialization passed the Linux link and focused/sanitizer tests.
+ - The full app route is blocked by no identified redistribution license for source, private Actions billing restriction, and absence of a Mac host; no paid route or billing-control bypass was used. See `MISSION_06_PROGRESS.md`.
+ 
+ ## Starting baseline
+-- 
+2.56.1
+
