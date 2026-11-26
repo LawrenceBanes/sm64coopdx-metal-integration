@@ -1,0 +1,56 @@
+From 570dc63416474837cbc1dbbe1a8ef012beeb1507 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 19:05:36 -0600
+Subject: [PATCH] Record validated overlay and runner blockers
+
+---
+ HANDOFF.md                | 2 +-
+ MISSION_03_04_PROGRESS.md | 4 +++-
+ VALIDATION.md             | 1 +
+ 3 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 5ac08957..6a95b998 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -15,4 +15,4 @@ Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedica
+ 
+ The GitHub CLI is authenticated for `LawrenceBanes`. The full-source checkout's only remote is `upstream` (`LeoManrique/sm64coopdx-ios`) and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied and full-source publication is on hold pending a compatible distribution basis. A private patch-only overlay now exists at `https://github.com/LawrenceBanes/sm64coopdx-metal-integration` and fetches the pinned public source at build time.
+ 
+-Latest Mission 03/04 local validation: `make -j2`, combiner/vertex-stream/scissor adapter tests, and ASan/UBSan tests pass. The Metal backend now uses three in-flight vertex/depth slots with bounded non-overlapping vertex slices, plus correctly clipped top-left-origin scissors; these source-reviewed fixes remain unverified by Apple's compiler/GPU. A clean overlay materialization at commit `79ef8cda` passed focused and sanitized tests and linked the full Linux executable; the subsequent scissor update is pending rematerialization. SDL preparation and Linux CMake checks pass. Overlay workflows `45730350990`, `45730896116`, and `45731814680` were rejected before any runner steps because GitHub reports failed account payments or a spending-limit restriction; no Apple compilation or IPA exists. Continue local parity work and rerun when GitHub can allocate runners.
++Latest local source checkpoint is `1d2498f99b1235f0df4f47b7034ae04192d28e40` (tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`). Host `make -j2`, adapter/combiner tests, and ASan/UBSan tests pass. The exact private overlay materialization passed a clean Linux link plus focused and sanitized tests. Metal now uses three in-flight vertex/depth slots with non-overlapping, bounded vertex slices and correctly clipped top-left-origin scissors. These are source-reviewed and host-logic-tested fixes, not Apple-compiled or GPU-verified behavior. Overlay workflows `45730350990`, `45730896116`, `45731814680`, and `45732668194` were rejected before runner steps because GitHub reports account payment/spending-limit restrictions; Apple compilation and IPA remain blocked. Continue parity work and rerun after the account-level runner block is cleared.
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+index 3d905a36..7ea28b53 100644
+--- a/MISSION_03_04_PROGRESS.md
++++ b/MISSION_03_04_PROGRESS.md
+@@ -4,7 +4,7 @@
+ 
+ - Branch: `mission-03-04-metal-first-light-parity`
+ - Starting commit: `fd2c768729b60f926382086b50f25b97c60b725d`
+-- Current source status: SDL2 pin, ROM-free compile path, combiner tests, and a bounded in-flight vertex stream are committed. Apple CI infrastructure exists, but GitHub is rejecting runner allocation before job startup. No Apple CI compile or IPA exists yet.
++- Current source commit: `1d2498f99b1235f0df4f47b7034ae04192d28e40` (tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`). SDL2 pin, ROM-free compile path, combiner tests, bounded in-flight vertex/depth resources, and clipped scissor translation are committed. The private patch overlay is pushed through its matching implementation patch; no Apple compile or IPA exists yet.
+ - Private overlay: `https://github.com/LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity` (patch series and build workflow only).
+ - Renderer reference worktree, Mission 81, and all unrelated repositories remain unchanged.
+ 
+@@ -39,6 +39,8 @@
+ - `make test` — blocked because the target attempts to execute `mupen64plus`, which is not installed (`Error 127`).
+ - Private overlay workflow `45730350990` — GitHub rejected runner allocation before steps started because recent account payments failed or the spending limit must be increased. No billing action was attempted.
+ - Follow-up overlay workflow `45730896116` — same account-level runner allocation rejection; host job failed with zero steps and iOS job was skipped. GitHub check annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." No billing action was attempted.
++- Overlay workflows `45731814680` and `45732668194` — each rejected before any job steps with the same billing/spending-limit annotation; iOS job skipped. These runs validate no source and are not compiler failures.
++- Exact latest overlay materialization: `./materialize.sh /tmp/coopdx-m03-materialize-1d249` recreated tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`; `tests/run_gfx_metal_coopdx_shader_test.sh`, its ASan/UBSan variant, and a clean `make -j2` all passed from that reconstructed tree. The linked host executable was 90,025,768 bytes. No ROM was uploaded.
+ - Apple SDK compilation, MSL validation, iOS arm64 link, IPA packaging, and device runtime — not run. `xcodebuild`/`xcrun` are absent.
+ 
+ ## Active blockers
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 9e4549d0..d70d580a 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -50,4 +50,5 @@ Update this record with exact commands and outcomes for each checkpoint. Do not
+ - Follow-up workflow `45730896116` also failed before any runner steps with the same exact billing/spending-limit annotation; host job has zero steps and the iOS job is skipped. This provides no compile evidence.
+ - After adding the frame-safe vertex stream: `git diff --check`, `tests/run_gfx_metal_coopdx_shader_test.sh`, `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh`, and `make -j2` — passed. The iOS-only Objective-C Metal source is excluded from the Linux build.
+ - After scissor clipping: the focused test suite and ASan/UBSan test passed again; incremental Linux `make -j2` passed. A clean overlay materialization at source commit `79ef8cda` passed the focused tests, sanitized tests, and completed a full Linux link. The new scissor change is staged for the next materialization checkpoint.
++- Latest exact overlay state: `./materialize.sh /tmp/coopdx-m03-materialize-1d249` verified source tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`; host combiner tests, ASan/UBSan, and a clean `make -j2` link passed. GitHub runs `45731814680` and `45732668194` failed before steps with the billing/spending-limit annotation; `ios-arm64` was skipped. No Apple compiler or device evidence was produced.
+ - Local `baserom.us.z64` is gitignored and was not committed or uploaded. The standard build can proceed without copying it into CI; the runtime ROM import remains a device-test requirement.
+-- 
+2.56.1
+
