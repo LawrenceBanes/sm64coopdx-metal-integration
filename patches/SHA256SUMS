@@ -20,3 +20,4 @@ e9b248c861b85ac88ca5c63d43565991daedcc8dc56529f7fd9f54626d84c569  0019-Make-Meta
 ca65fe487e222484b88a415f73b0c2df52a0a8f7f838cc125cb02a71c88f69f3  0020-Sync-Mission-06-integration-source-and-validation.patch
 f9c2354f616fe523d4c28fcf57f8ad93c7a72777f13dc2b88dd1a1f7ef27f3e9  0021-Record-final-Mission-06-overlay-checkpoint.patch
 5a2965a9b7f5a4c0222143149896900a3dfd204f30c432f071d0fb90d5db8378  0022-Clarify-final-Mission-06-source-checkpoints.patch
+7ad7ff3f102ffd2f7cd9ff3f53f2ca551a3c6d109027d5944c019d08f8f7e8b3  0023-Make-Mission-06-handoff-checkpoint-neutral.patch

@@ -1,0 +1,27 @@
+From 2f2eb5e9d3700939c49604cd7928cb666fa26e35 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:23:51 -0600
+Subject: [PATCH] Make Mission 06 handoff checkpoint-neutral
+
+---
+ MISSION_06_PROGRESS.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/MISSION_06_PROGRESS.md b/MISSION_06_PROGRESS.md
+index 33501d1e..92ed9771 100644
+--- a/MISSION_06_PROGRESS.md
++++ b/MISSION_06_PROGRESS.md
+@@ -8,8 +8,8 @@
+ 
+ - Integration source: `/home/larry/Projects/sm64coopdx-metal`
+ - Integration branch: `mission-03-04-metal-first-light-parity`
+-- Latest local integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`). The local branch contains the Mission 06 validation records through `f4274ebf`; it has only the `upstream` remote, which must not be used for publishing.
+-- Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`. Source checkpoint `7bbb7c6` added the verified implementation; latest overlay commit `de511e7` records the final materialization hash. Push triggers are disabled in the private workflow, so no private Actions job ran.
++- Integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`), followed by Mission 06 handoff updates. The local branch has only the `upstream` remote, which must not be used for publishing.
++- Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`. It contains the verified implementation and hash-pinned patch series. Push triggers are disabled in the private workflow, so overlay updates do not start private Actions jobs.
+ - `materialize.sh /tmp/mission06-materialized-final` passed and verified implementation tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations. The final overlay adds documentation only and verifies tree `c37fe3d664b2c74f19c988bc62c4c606218b61f7`.
+ - Public, source-only component harness: [LawrenceBanes/sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
+ - Latest public harness commit: `0c426ac76bd3a594f2aa47221e51c257164b80dd` (`Include the linked ARM64 Metal harness in CI artifacts`).
+-- 
+2.56.1
+
