@@ -1,0 +1,389 @@
+From 79ef8cdaf0b3040246b9f61e3fb255c66d10321e Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 18:50:53 -0600
+Subject: [PATCH] Protect in-flight Metal vertex and depth resources
+
+---
+ HANDOFF.md                           |   2 +-
+ MISSION_03_04_PROGRESS.md            |  11 ++-
+ RENDERER_PARITY.md                   |   4 +-
+ VALIDATION.md                        |   3 +
+ src/pc/gfx/gfx_metal_coopdx.m        | 108 ++++++++++++++++++++++-----
+ src/pc/gfx/gfx_metal_coopdx_stream.h |  43 +++++++++++
+ tests/gfx_metal_coopdx_shader_test.c |  16 ++++
+ 7 files changed, 161 insertions(+), 26 deletions(-)
+ create mode 100644 src/pc/gfx/gfx_metal_coopdx_stream.h
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index acff3ace..e379c1c2 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -15,4 +15,4 @@ Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedica
+ 
+ The GitHub CLI is authenticated for `LawrenceBanes`. The full-source checkout's only remote is `upstream` (`LeoManrique/sm64coopdx-ios`) and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied and full-source publication is on hold pending a compatible distribution basis. A private patch-only overlay now exists at `https://github.com/LawrenceBanes/sm64coopdx-metal-integration` and fetches the pinned public source at build time.
+ 
+-Latest Mission 03/04 local validation: `make -j2`, combiner adapter tests, and ASan/UBSan tests pass. A fresh clone reconstructed from pinned upstream plus the patch series builds on Linux without a ROM. SDL preparation and Linux CMake checks pass. Private overlay workflow `45730350990` could not start because GitHub reported failed account payments or a spending-limit restriction before runner allocation; no Apple compilation or IPA exists. Continue local parity work and rerun the workflow after the account-level blocker is cleared.
++Latest Mission 03/04 local validation: `make -j2`, combiner/vertex-stream adapter tests, and ASan/UBSan tests pass. The Metal backend now uses three in-flight vertex/depth slots with bounded non-overlapping vertex slices; this addresses a CPU overwrite hazard found by source inspection, but remains unverified by Apple's compiler/GPU. A fresh clone reconstructed from pinned upstream plus the patch series builds on Linux without a ROM. SDL preparation and Linux CMake checks pass. Overlay workflows `45730350990` and `45730896116` were both rejected before any runner steps because GitHub reports failed account payments or a spending-limit restriction; no Apple compilation or IPA exists. Continue local parity work and rerun when GitHub can allocate runners.
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+index 441705db..b55d5554 100644
+--- a/MISSION_03_04_PROGRESS.md
++++ b/MISSION_03_04_PROGRESS.md
+@@ -4,7 +4,7 @@
+ 
+ - Branch: `mission-03-04-metal-first-light-parity`
+ - Starting commit: `fd2c768729b60f926382086b50f25b97c60b725d`
+-- Current source status: SDL2 pin is committed; Apple CI infrastructure and Mission 04 work remain. No Apple CI run or IPA exists yet.
++- Current source status: SDL2 pin, ROM-free compile path, combiner tests, and a bounded in-flight vertex stream are committed. Apple CI infrastructure exists, but GitHub is rejecting runner allocation before job startup. No Apple CI compile or IPA exists yet.
+ - Private overlay: `https://github.com/LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity` (patch series and build workflow only).
+ - Renderer reference worktree, Mission 81, and all unrelated repositories remain unchanged.
+ 
+@@ -19,6 +19,7 @@
+ - Removed the build script's false ROM prerequisite after a fresh clone built successfully with no ROM present. Users still supply/import a ROM at app runtime.
+ - Extended the combiner regression harness to emit its real generated MSL fixture for Apple's Metal compiler.
+ - Expanded host coverage for textureless and tile-1-only shader layouts, key-field changes, and unsupported combiner command rejection.
++- Fixed the Metal draw-stream reuse hazard: each of three in-flight frames now uses its own vertex buffer slices and depth target; a semaphore prevents a slot from being reused until its command buffer completes. Stream growth is deferred until that slot is safe to reuse and capped at 32 MiB. The portable allocator has deterministic non-overlap, alignment, reset, and budget tests.
+ - Refreshed `HANDOFF.md`, `METAL_INTEGRATION_PLAN.md`, and `VALIDATION.md` with current facts and evidence.
+ 
+ ## Validation
+@@ -32,8 +33,10 @@
+ - A fresh clone reconstructed from the pinned upstream commit plus the Mission 01/02 patch series completed `make -j2` without `baserom.us.z64`.
+ - `METAL_MSL_OUTPUT='/tmp/coopdx msl emitted.metal' tests/run_gfx_metal_coopdx_shader_test.sh` and the sanitized counterpart — passed; emitted the same 3,905-byte generated MSL fixture.
+ - `METAL_MSL_OUTPUT=/tmp/mission04-complex.metal tests/run_gfx_metal_coopdx_shader_test.sh` — passed and emits the representative two-cycle fixture. Apple Metal compilation remains unverified.
++- After the vertex-stream change: `tests/run_gfx_metal_coopdx_shader_test.sh`, its ASan/UBSan variant, and `make -j2` — passed. This does not compile the Objective-C Metal backend.
+ - `make test` — blocked because the target attempts to execute `mupen64plus`, which is not installed (`Error 127`).
+ - Private overlay workflow `45730350990` — GitHub rejected runner allocation before steps started because recent account payments failed or the spending limit must be increased. No billing action was attempted.
++- Follow-up overlay workflow `45730896116` — same account-level runner allocation rejection; host job failed with zero steps and iOS job was skipped. GitHub check annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." No billing action was attempted.
+ - Apple SDK compilation, MSL validation, iOS arm64 link, IPA packaging, and device runtime — not run. `xcodebuild`/`xcrun` are absent.
+ 
+ ## Active blockers
+@@ -45,9 +48,9 @@
+ 
+ ## Next actions
+ 
+-1. Rerun private overlay workflow after GitHub Actions is permitted to allocate runners.
+-2. Fix any actionable host, MSL, Apple compile/link, or IPA validation failures revealed by that run.
+-3. Continue Mission 04 parity with evidence-driven behavior and tests, keeping OpenGL ES operational.
++1. Carry the bounded frame-resource fix into the private patch overlay and validate its exact materialized tree.
++2. Rerun the private overlay workflow after GitHub Actions is permitted to allocate runners.
++3. Fix any actionable host, MSL, Apple compile/link, or IPA validation failures revealed by that run; continue renderer parity with host tests and preserve OpenGL ES.
+ 
+ ## Evidence categories
+ 
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+index d3f560b4..059f65d9 100644
+--- a/RENDERER_PARITY.md
++++ b/RENDERER_PARITY.md
+@@ -4,14 +4,14 @@
+ |---|---|---|---|
+ | Display-list and DynOS frontend | Shared `gfx_pc.c` interpreter and texture decoder | Must remain shared | No renderer port may bypass this frontend |
+ | Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented, host-tested source generator; MSL not Apple-compiled | Full key and 1/2-cycle formula, fog, edge discard, light map, world color flags and three-point filter translation; tests cover textureless and tile-1-only paths plus unsupported command rejection |
+-| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source implemented | Dynamic descriptor follows generated metadata; no iOS compiler validation yet |
++| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source implemented; host allocation helper tested | Three command-buffer-safe frame slots reserve non-overlapping, 256-byte-aligned slices; growth is deferred to slot reuse and capped at 32 MiB per frame. GPU execution and Apple compile remain unverified |
+ | Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Backend source implemented | Bounded cache, wrap/filter samplers, and CoopDX three-point sample path; no invalidation/deletion callback exists in current API; DynOS replacement lifetime unverified |
+ | Depth and decal | Backend depth test/write and z-mode decal callbacks | Backend source implemented | LEQUAL/always states and polygon depth bias; no GPU validation |
+ | Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Backend source implemented | GL blend factors are represented; no visual test of ordering or blend parity |
+ | Fog | Per-vertex fog attribute under combiner flag | Generator/backend source implemented | MSL mixes interpolated fog; no visual validation |
+ | Light-map path | Secondary UV, texture 1 and light-map color | Generator/backend source implemented | Uses `gVertexColor`; requires comparison against real scenes |
+ | Viewport/scissor | Callback-driven screen state | SDL Metal dimensions and backend state implemented | iOS drawable scale/orientation and coordinate mapping unverified |
+-| Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal layer, drawable, command buffer, depth target and present source implemented | No Metal SDK compile/runtime validation |
++| Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal layer, drawable, command buffer, triple-buffered vertex/depth resources, bounded in-flight semaphore and present source implemented | No Metal SDK compile/runtime validation; drawable-loss, orientation and background/foreground paths still need device testing |
+ | HUD/UI/DJUI | Same display-list frontend with blended draws | Expected to share the frontend | Not tested; textured glyphs and special combiner paths remain a parity risk |
+ | Character animation / DynOS | Same game and graphics frontend | Uses the same planned backend submission path | Not tested; texture cleanup and repeated model switching need runtime tests |
+ | OpenGL ES fallback | Current iOS default | Preserved in source | Must remain known-good and recoverable from failed Metal initialization |
+diff --git a/VALIDATION.md b/VALIDATION.md
+index fa955328..87d31e5a 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -12,6 +12,7 @@
+ 
+ - `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
+ - `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed under ASan/UBSan.
++- The portable vertex stream allocator is exercised for aligned non-overlapping slices, capacity exhaustion without wraparound, per-frame reset, and reuse after reset. This tests allocation arithmetic only; the triple-buffered Metal resource path has not run on an Apple GPU.
+ - Expanded combiner tests cover textureless shading, a tile-1-only vertex layout, key changes from commands/mapping/flags, and rejection of unsupported commands. `METAL_MSL_OUTPUT=/tmp/mission04-complex.metal tests/run_gfx_metal_coopdx_shader_test.sh` emits the representative two-cycle, fog, alpha, light-map, world-flag and two-texture MSL fixture for Apple compilation.
+ - `make -j2` — passed after C/UI/SDL selection changes; links `build/us_pc/sm64coopdx`. The Linux build does not compile the iOS-only Objective-C Metal source.
+ - Adapter regression now asserts generated world color flag expressions and the CoopDX three-point sampling path in addition to alpha/fog/light-map/cycle variants.
+@@ -45,4 +46,6 @@ Update this record with exact commands and outcomes for each checkpoint. Do not
+ - `xcodebuild`/`xcrun` remain unavailable on this host. No macOS CI has yet run, and there is no IPA, Apple shader compilation, iOS link, or device result.
+ - GitHub CLI authentication succeeded for `LawrenceBanes`; repository access is confirmed. The only configured Git remote is `upstream` (`LeoManrique/sm64coopdx-ios`); no personal source remote exists. The upstream repositories report no license metadata and contain no root license file, so a full-source push remains deferred. Do not push to upstream.
+ - The patch-only private overlay `LawrenceBanes/sm64coopdx-metal-integration` was created and its branch pushed. First workflow run `45730350990` did not start a runner; GitHub's check annotation reports failed account payments or a spending-limit issue. This is an account-level external blocker. No public visibility change, spending-limit change, or billing action was attempted.
++- Follow-up workflow `45730896116` also failed before any runner steps with the same exact billing/spending-limit annotation; host job has zero steps and the iOS job is skipped. This provides no compile evidence.
++- After adding the frame-safe vertex stream: `git diff --check`, `tests/run_gfx_metal_coopdx_shader_test.sh`, `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh`, and `make -j2` — passed. The iOS-only Objective-C Metal source is excluded from the Linux build.
+ - Local `baserom.us.z64` is gitignored and was not committed or uploaded. The standard build can proceed without copying it into CI; the runtime ROM import remains a device-test requirement.
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index 2e363326..e0e0f1a6 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -1,6 +1,7 @@
+ #import <Foundation/Foundation.h>
+ #import <Metal/Metal.h>
+ #import <QuartzCore/CAMetalLayer.h>
++#import <dispatch/dispatch.h>
+ #include <SDL2/SDL.h>
+ #include <SDL2/SDL_metal.h>
+ #include <PR/gbi.h>
+@@ -10,6 +11,7 @@
+ 
+ #include "gfx_metal_coopdx.h"
+ #include "gfx_metal_coopdx_shader.h"
++#include "gfx_metal_coopdx_stream.h"
+ #include "gfx_sdl.h"
+ #include "gfx_pc.h"
+ #include "gfx_cc.h"
+@@ -20,6 +22,15 @@
+ #define METAL_MAX_BUFFER_BYTES (32u * 1024u * 1024u)
+ #define METAL_MAX_TEXTURE_BYTES (256u * 1024u * 1024u)
+ #define METAL_MAX_SINGLE_TEXTURE_BYTES (16u * 1024u * 1024u)
++#define METAL_FRAMES_IN_FLIGHT 3
++
++struct MetalVertexFrame {
++    id<MTLBuffer> buffer;
++    id<MTLTexture> depth;
++    NSUInteger capacity;
++    struct GfxMetalCoopDXVertexStream stream;
++    size_t growthTarget;
++};
+ 
+ struct MetalProgram {
+     struct GfxMetalCoopDXShaderKey key;
+@@ -32,9 +43,10 @@ static id<MTLCommandQueue> sQueue;
+ static id<CAMetalDrawable> sDrawable;
+ static id<MTLCommandBuffer> sCommandBuffer;
+ static id<MTLRenderCommandEncoder> sEncoder;
+-static id<MTLTexture> sDepth;
+-static id<MTLBuffer> sVertexBuffer;
+-static NSUInteger sVertexCapacity;
++static struct MetalVertexFrame sVertexFrames[METAL_FRAMES_IN_FLIGHT];
++static NSUInteger sVertexFrameIndex;
++static dispatch_semaphore_t sFrameSemaphore;
++static bool sFramePermit;
+ static NSUInteger sTextureBytes;
+ static struct MetalProgram sPrograms[METAL_SHADER_LIMIT];
+ static NSUInteger sProgramCount;
+@@ -273,19 +285,19 @@ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t tria
+         fprintf(stderr, "Metal vertex batch stride mismatch\n");
+         return;
+     }
+-    if (!sVertexBuffer || sVertexCapacity < bytes) {
+-        NSUInteger capacity = 4096;
+-        while (capacity < bytes && capacity < METAL_MAX_BUFFER_BYTES) capacity *= 2;
+-        if (capacity > METAL_MAX_BUFFER_BYTES) capacity = METAL_MAX_BUFFER_BYTES;
+-        id<MTLBuffer> replacement = [sDevice newBufferWithLength:capacity options:MTLResourceStorageModeShared];
+-        if (!replacement) return;
+-        sVertexBuffer = replacement; sVertexCapacity = capacity;
++    size_t vertexOffset = 0;
++    struct MetalVertexFrame *frame = &sVertexFrames[sVertexFrameIndex];
++    if (!frame->buffer || !gfx_metal_coopdx_vertex_stream_reserve(
++            &frame->stream, bytes, 256, frame->capacity,
++            METAL_MAX_BUFFER_BYTES, &vertexOffset)) {
++        if (frame->stream.required > frame->growthTarget) frame->growthTarget = frame->stream.required;
++        return;
+     }
+-    memcpy(sVertexBuffer.contents, vertices, bytes);
++    memcpy((uint8_t *)frame->buffer.contents + vertexOffset, vertices, bytes);
+     [sEncoder setRenderPipelineState:pipeline];
+     [sEncoder setDepthStencilState:sDepthStates[sDepthEnabled ? 1 : 0][sDepthWrite ? 1 : 0]];
+     [sEncoder setDepthBias:sDecal ? -2.0 : 0.0 slopeScale:sDecal ? -2.0 : 0.0 clamp:0.0];
+-    [sEncoder setVertexBuffer:sVertexBuffer offset:0 atIndex:0];
++    [sEncoder setVertexBuffer:frame->buffer offset:vertexOffset atIndex:0];
+     for (int tile = 0; tile < 2; ++tile) {
+         id<MTLTexture> t = sTextures[sSelectedTexture[tile]] ?: sWhiteTexture;
+         [sEncoder setFragmentTexture:t atIndex:tile];
+@@ -307,6 +319,9 @@ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t tria
+ static void metal_init(void) {
+     sReady = false;
+     sPipelineError = false;
++    sFrameSemaphore = dispatch_semaphore_create(METAL_FRAMES_IN_FLIGHT);
++    if (!sFrameSemaphore) { fprintf(stderr, "Metal frame semaphore creation failed\n"); return; }
++    for (int i = 0; i < METAL_FRAMES_IN_FLIGHT; ++i) sVertexFrames[i].growthTarget = 4096;
+     id layerValue = (__bridge id)gfx_sdl_get_metal_layer();
+     if (!gfx_sdl_uses_metal() || !layerValue) { fprintf(stderr, "Metal renderer requires an SDL Metal view\n"); return; }
+     sDevice = MTLCreateSystemDefaultDevice();
+@@ -332,23 +347,63 @@ static void metal_init(void) {
+ static void metal_resize(void) { sWidth = 0; sHeight = 0; }
+ static void metal_start_frame(void) {
+     if (!sReady) return;
++    dispatch_semaphore_wait(sFrameSemaphore, DISPATCH_TIME_FOREVER);
++    sFramePermit = true;
+     ++sFrame;
++    sVertexFrameIndex = (sFrame - 1) % METAL_FRAMES_IN_FLIGHT;
++    struct MetalVertexFrame *frame = &sVertexFrames[sVertexFrameIndex];
++    if (frame->growthTarget > frame->capacity && frame->growthTarget <= METAL_MAX_BUFFER_BYTES) {
++        NSUInteger capacity = 4096;
++        while (capacity < frame->growthTarget && capacity < METAL_MAX_BUFFER_BYTES) capacity *= 2;
++        if (capacity > METAL_MAX_BUFFER_BYTES) capacity = METAL_MAX_BUFFER_BYTES;
++        id<MTLBuffer> replacement = [sDevice newBufferWithLength:capacity options:MTLResourceStorageModeShared];
++        if (replacement) {
++            frame->buffer = replacement;
++            frame->capacity = capacity;
++            frame->growthTarget = 0;
++        } else {
++            fprintf(stderr, "Metal vertex stream growth failed (%zu bytes requested)\n", frame->growthTarget);
++        }
++    }
++    gfx_metal_coopdx_vertex_stream_reset(&frame->stream);
+     sDrawable = [(CAMetalLayer *)gfx_sdl_get_metal_layer() nextDrawable];
+-    if (!sDrawable) return;
++    if (!sDrawable) {
++        dispatch_semaphore_signal(sFrameSemaphore);
++        sFramePermit = false;
++        return;
++    }
+     sWidth = sDrawable.texture.width; sHeight = sDrawable.texture.height;
+     sCommandBuffer = [sQueue commandBuffer];
+-    if (sWidth != sDepth.width || sHeight != sDepth.height) {
++    if (!sCommandBuffer) {
++        sDrawable = nil;
++        dispatch_semaphore_signal(sFrameSemaphore);
++        sFramePermit = false;
++        return;
++    }
++    dispatch_semaphore_t frameSemaphore = sFrameSemaphore;
++    [sCommandBuffer addCompletedHandler:^(id<MTLCommandBuffer> commandBuffer) {
++        (void)commandBuffer;
++        dispatch_semaphore_signal(frameSemaphore);
++    }];
++    sFramePermit = false;
++    if (sWidth != frame->depth.width || sHeight != frame->depth.height) {
+         MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float width:sWidth height:sHeight mipmapped:NO];
+         d.usage = MTLTextureUsageRenderTarget;
+         d.storageMode = MTLStorageModePrivate;
+-        sDepth = [sDevice newTextureWithDescriptor:d];
++        frame->depth = [sDevice newTextureWithDescriptor:d];
++    }
++    if (!frame->depth) {
++        sDrawable = nil;
++        [sCommandBuffer commit];
++        sCommandBuffer = nil;
++        return;
+     }
+     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+     pass.colorAttachments[0].texture = sDrawable.texture;
+     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+     pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+-    pass.depthAttachment.texture = sDepth;
++    pass.depthAttachment.texture = frame->depth;
+     pass.depthAttachment.loadAction = MTLLoadActionClear;
+     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+     pass.depthAttachment.clearDepth = 1.0;
+@@ -359,7 +414,13 @@ static void metal_end_frame(void) {
+     if (sEncoder) { [sEncoder endEncoding]; sEncoder = nil; }
+ }
+ static void metal_finish_render(void) {
+-    if (!sCommandBuffer) return;
++    if (!sCommandBuffer) {
++        if (sFramePermit) {
++            dispatch_semaphore_signal(sFrameSemaphore);
++            sFramePermit = false;
++        }
++        return;
++    }
+     if (sEncoder) metal_end_frame();
+     if (sDrawable) [sCommandBuffer presentDrawable:sDrawable];
+     [sCommandBuffer commit];
+@@ -368,8 +429,17 @@ static void metal_finish_render(void) {
+ static const char *metal_name(void) { return "Metal (CoopDX)"; }
+ static void metal_shutdown(void) {
+     sReady = false;
+-    sEncoder = nil; sCommandBuffer = nil; sDrawable = nil; sDepth = nil; sVertexBuffer = nil;
+-    sProgram = NULL; sProgramCount = 0; sVertexCapacity = 0;
++    sEncoder = nil; sCommandBuffer = nil; sDrawable = nil;
++    sProgram = NULL; sProgramCount = 0;
++    for (int i = 0; i < METAL_FRAMES_IN_FLIGHT; ++i) {
++        sVertexFrames[i].buffer = nil;
++        sVertexFrames[i].depth = nil;
++        sVertexFrames[i].capacity = 0;
++        sVertexFrames[i].growthTarget = 0;
++        gfx_metal_coopdx_vertex_stream_reset(&sVertexFrames[i].stream);
++    }
++    sFramePermit = false;
++    sFrameSemaphore = nil;
+     sTextureBytes = 0;
+     sNextTexture = 1; sUploadTile = 0;
+     memset(sSelectedTexture, 0, sizeof(sSelectedTexture));
+diff --git a/src/pc/gfx/gfx_metal_coopdx_stream.h b/src/pc/gfx/gfx_metal_coopdx_stream.h
+new file mode 100644
+index 00000000..93aadd0c
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx_stream.h
+@@ -0,0 +1,43 @@
++#ifndef GFX_METAL_COOPDX_STREAM_H
++#define GFX_METAL_COOPDX_STREAM_H
++
++#include <stdbool.h>
++#include <stddef.h>
++
++/* Tracks immutable vertex slices referenced by draw calls in one command buffer. */
++struct GfxMetalCoopDXVertexStream {
++    size_t used;
++    size_t required;
++};
++
++static inline void gfx_metal_coopdx_vertex_stream_reset(struct GfxMetalCoopDXVertexStream *stream) {
++    if (stream) {
++        stream->used = 0;
++        stream->required = 0;
++    }
++}
++
++static inline bool gfx_metal_coopdx_vertex_stream_reserve(
++    struct GfxMetalCoopDXVertexStream *stream, size_t bytes, size_t alignment,
++    size_t capacity, size_t limit, size_t *offset) {
++    if (!stream || !offset || bytes == 0 || alignment == 0 || limit == 0) return false;
++    size_t remainder = stream->used % alignment;
++    size_t padding = remainder ? alignment - remainder : 0;
++    if (stream->used > limit || padding > limit - stream->used) {
++        stream->used = limit;
++        return false;
++    }
++    size_t start = stream->used + padding;
++    if (bytes > limit - start) {
++        stream->used = limit;
++        return false;
++    }
++    size_t end = start + bytes;
++    stream->used = end;
++    if (end > stream->required) stream->required = end;
++    if (end > capacity) return false;
++    *offset = start;
++    return true;
++}
++
++#endif
+diff --git a/tests/gfx_metal_coopdx_shader_test.c b/tests/gfx_metal_coopdx_shader_test.c
+index 17527ad6..6fdb17da 100644
+--- a/tests/gfx_metal_coopdx_shader_test.c
++++ b/tests/gfx_metal_coopdx_shader_test.c
+@@ -3,6 +3,7 @@
+ #include <string.h>
+ 
+ #include "pc/gfx/gfx_metal_coopdx_shader.h"
++#include "pc/gfx/gfx_metal_coopdx_stream.h"
+ #include "pc/gfx/gfx_pc.h"
+ 
+ void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1,
+@@ -11,6 +12,21 @@ void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1,
+ }
+ 
+ int main(int argc, char **argv) {
++    struct GfxMetalCoopDXVertexStream stream = { 0 };
++    size_t stream_offset = SIZE_MAX;
++    assert(gfx_metal_coopdx_vertex_stream_reserve(&stream, 48, 16, 256, 512, &stream_offset));
++    assert(stream_offset == 0 && stream.used == 48 && stream.required == 48);
++    assert(gfx_metal_coopdx_vertex_stream_reserve(&stream, 64, 16, 256, 512, &stream_offset));
++    assert(stream_offset == 48 && stream.used == 112 && stream.required == 112);
++    assert(!gfx_metal_coopdx_vertex_stream_reserve(&stream, 160, 16, 128, 512, &stream_offset));
++    assert(stream.used == 272 && stream.required == 272);
++    assert(!gfx_metal_coopdx_vertex_stream_reserve(&stream, 8, 16, 128, 272, &stream_offset));
++    assert(stream.used == 272); /* A full bounded frame cannot wrap and overwrite earlier draws. */
++    gfx_metal_coopdx_vertex_stream_reset(&stream);
++    assert(stream.used == 0 && stream.required == 0);
++    assert(gfx_metal_coopdx_vertex_stream_reserve(&stream, 128, 16, 256, 512, &stream_offset));
++    assert(stream_offset == 0 && stream.used == 128);
++
+     struct ColorCombiner cc = { 0 };
+     cc.cm.use_alpha = true;
+     cc.cm.use_fog = true;
+-- 
+2.56.1
+

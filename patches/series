@@ -12,3 +12,4 @@
 0012-Pin-and-verify-SDL2-iOS-build-dependency.patch
 0013-Enable-ROM-free-compile-validation-and-emit-MSL-fixt.patch
 0014-Expand-host-combiner-parity-coverage.patch
+0015-Protect-in-flight-Metal-vertex-and-depth-resources.patch
