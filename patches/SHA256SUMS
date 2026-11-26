@@ -1,0 +1,13 @@
+aa8a1beba337746b438038cb153f68970f9b44f152caf396a9f170ffce550ce2  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0001-Add-iOS-mod-ZIP-import-and-archive-safeguards.patch
+65fe0ea06faab7dce6376e765c5256a5ee7c26c7e55fca22882c21e60180b2a0  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0002-Test-production-mod-ZIP-preflight.patch
+dba93a0492dba567c47931383aa8a6d475a00dd6b0812fef078374a7366021fb  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0003-Install-root-layout-Lua-ZIPs-as-named-mods.patch
+99ac5baf056031a99b330d447d24df475abff8e937f618e864cec0afad5053b5  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0004-Record-Mission-01-implementation-checkpoint.patch
+90a78c208327432fb2107c7bb604947f5527f1ae17d9b1b70710277e532f13b6  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0005-Add-CoopDX-color-combiner-to-Metal-shader-adapter.patch
+7fbecfd317f02a99f79105891c5c2187fa228ce97bc8335788a641a3e8da8a2e  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0006-Add-initial-CoopDX-iOS-Metal-rendering-backend.patch
+b9542c2574cada90592c059d50fedc01ab882bf153e184d950795bbd9dbfb1ca  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0007-Record-Metal-backend-validation-limits.patch
+cb1c6b007c414219e2edba18e3e8d879031e0c784540723f2edd1bbbf0b6aa0a  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0008-Preserve-CoopDX-world-flags-and-texture-filtering-in.patch
+5676aa57a8eaa7af81e12e0af2ede83380974e996b5b2d3d249b35d320846de9  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0009-Preserve-CoopDX-world-flags-and-texture-filtering-in.patch
+c8b1b6e472887c6acac363142de7562dcd79e6fe28483f735d86ef4099886255  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0010-Refresh-Mission-02-handoff-at-current-checkpoint.patch
+badab80da070f96afc0d64aae49e3631ab1dcb3f99c865d478db8b91dfc3629e  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0011-Record-latest-Mission-02-handoff-commit.patch
+6c7dcbb6b47c16c5761dd79bb30aa52712cb10933f786108a3c0666a0a8fb687  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0012-Pin-and-verify-SDL2-iOS-build-dependency.patch
+bc600cfe2fa9908eecb2361910c6bb3070c488e0b698de6f8eb631b351581b19  /home/larry/Projects/sm64coopdx-metal-overlay/patches/0013-Enable-ROM-free-compile-validation-and-emit-MSL-fixt.patch

@@ -1,0 +1,19 @@
+From eb7ab3aecf2bde702ac7ac8c8c155c3c9097bd74 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:42:24 -0600
+Subject: [PATCH 10/13] Refresh Mission 02 handoff at current checkpoint
+
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index fbd9398cfefbd96dd7e5bcc146da17f3b34f387f..66fc0a06a5da5a8cef7641cb7a86a4e39025e9a7 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -11,4 +11,4 @@ Mission 02 has a tested semantic combiner-to-MSL generator (`src/pc/gfx/gfx_meta
+ 
+ The upstream iOS and Metal renderer roots have no project-level license grant identified. No renderer code has been copied. The local Metal reference remote's SSH fetch failed due a system SSH config permission error; HTTPS confirms its remote `mission-81-shader64-rendergraph` at `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. The existing local Metal worktree is on `mission-55-6-codemagic` with a pre-existing modified `src/game/skybox.c`; the Mission 81 worktree has pre-existing untracked `--repo`; Mission 82 has pre-existing gameplay/runtime modifications. All were left untouched.
+ 
+-Current commit: `9d32baa8` (initial Metal backend source and SDL integration), preceded by `36fd9adb` (tested combiner adapter). The next step is Apple compilation and correction against the Metal SDK, followed by runtime validation of color/material behavior. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
++Current commit: `6d3f47a0`; implementation commits are `36fd9adb` (host-tested combiner adapter), `9d32baa8` (Metal/SDL backend integration), `1652a74a` (validation limits), and `1664cd7b` (world color flags and three-point texture filtering). The Linux game build, adapter tests, and ASan/UBSan adapter tests pass. The next step is Apple compilation and correction against the Metal SDK, followed by runtime validation of color/material behavior. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
+-- 
+2.56.1
+

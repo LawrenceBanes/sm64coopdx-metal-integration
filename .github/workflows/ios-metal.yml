@@ -1,0 +1,78 @@
+name: CoopDX Metal iOS validation
+
+on:
+  push:
+    branches: [mission-03-04-metal-first-light-parity]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential git python3 libglew-dev libsdl2-dev libz-dev libcurl4-openssl-dev zip
+      - name: Materialize pinned source from patches
+        run: ./materialize.sh "$RUNNER_TEMP/coopdx"
+      - name: Build Linux game and test combiner generator
+        working-directory: ${{ runner.temp }}/coopdx
+        run: |
+          make -j2
+          tests/run_gfx_metal_coopdx_shader_test.sh
+          SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh
+
+  ios-arm64:
+    needs: host
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode and iPhoneOS Metal toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --find metal
+      - name: Install host tools for the CoopDX resource build
+        run: |
+          brew install cmake make mingw-w64 gcc pkg-config glfw glew sdl2 coreutils
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Materialize pinned source from patches
+        run: ./materialize.sh "$RUNNER_TEMP/coopdx"
+      - name: Emit and compile a real generated MSL variant
+        working-directory: ${{ runner.temp }}/coopdx
+        run: |
+          set -euo pipefail
+          METAL_MSL_OUTPUT="$RUNNER_TEMP/coopdx-combiner.metal" tests/run_gfx_metal_coopdx_shader_test.sh
+          xcrun --sdk iphoneos metal -c "$RUNNER_TEMP/coopdx-combiner.metal" -o "$RUNNER_TEMP/coopdx-combiner.air"
+      - name: Build and package unsigned iPhoneOS IPA
+        working-directory: ${{ runner.temp }}/coopdx
+        run: |
+          set -euo pipefail
+          ./build_ios.sh all
+          unzip -t sm64coopdx.ipa
+          APP="$RUNNER_TEMP/coopdx/build-ios/Release-iphoneos/sm64coopdx.app"
+          test -d "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist"
+          plutil -lint "$APP/Info.plist"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          lipo -verify_arch arm64 "$APP/$EXECUTABLE"
+          test ! -e "$APP/embedded.mobileprovision"
+          shasum -a 256 sm64coopdx.ipa | tee "$RUNNER_TEMP/sm64coopdx.ipa.sha256"
+      - name: Upload private short-lived IPA and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: sm64coopdx-ios-metal-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/coopdx/sm64coopdx.ipa
+            ${{ runner.temp }}/sm64coopdx.ipa.sha256
+            ${{ runner.temp }}/coopdx-combiner.metal
+            ${{ runner.temp }}/coopdx-combiner.air
+          if-no-files-found: error
+          retention-days: 1

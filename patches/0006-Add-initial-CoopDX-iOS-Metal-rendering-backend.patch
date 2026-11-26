@@ -1,0 +1,915 @@
+From 9d32baa8ec2c0b5cbad2cdbca578fe1d7e974426 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:37:20 -0600
+Subject: [PATCH 06/13] Add initial CoopDX iOS Metal rendering backend
+
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index cec65e7972376f39bf1522f40419420bf0fda641..af01840567f9aaececf39d4bf844e9513a0c0568 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -208,8 +208,11 @@ include_directories(${GAME_ROOT}/lib/lua/include)
+ # iOS Objective-C sources
+ set(IOS_OBJC_FILES
+     ${GAME_ROOT}/src/pc/platform_ios.m
++    ${GAME_ROOT}/src/pc/gfx/gfx_metal_coopdx.m
+ )
+ 
++set_source_files_properties(${GAME_ROOT}/src/pc/gfx/gfx_metal_coopdx.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
++
+ set(ASSET_CATALOG ${GAME_ROOT}/platform/ios/Assets.xcassets)
+ 
+ add_executable(sm64coopdx MACOSX_BUNDLE ${ALL_SOURCES} ${IOS_OBJC_FILES} ${ASSET_CATALOG})
+diff --git a/HANDOFF.md b/HANDOFF.md
+index f99e7661465af1b9767cb3478e41c634d4a4eed6..65b78465895d8cd387d0c10864729a04b42853a5 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -7,8 +7,8 @@ Upstream CoopDX baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`
+ 
+ Mission 01 added an iOS Files ZIP picker and production-importer ZIP preflight, and preserved root-level Lua archive naming. No renderer source was changed or copied.
+ 
+-Mission 02 has begun with `METAL_INTEGRATION_PLAN.md`, `RENDERER_PARITY.md`, and `VALIDATION.md`. Key constraint: CoopDX's `GfxRenderingAPI` receives full `ColorCombiner*` values; the previous iOS Metal implementation takes packed 32-bit IDs, so direct casting/hash mapping is invalid. Implement a new semantic MSL adapter under the CoopDX interface. Keep OpenGL ES and CoopDX's RSP/display-list/DynOS frontends.
++Mission 02 has a tested semantic combiner-to-MSL generator (`src/pc/gfx/gfx_metal_coopdx_shader.c`) and an iOS-only Objective-C Metal `GfxRenderingAPI` implementation plus SDL Metal layer selection. Metal is opt-in in the display settings; OpenGL ES is still the default. Initialization and built-in pipeline-precompile failures recover to OpenGL ES. These backend changes are source-only until an Apple build runs.
+ 
+ The upstream iOS and Metal renderer roots have no project-level license grant identified. No renderer code has been copied. The local Metal reference remote's SSH fetch failed due a system SSH config permission error; HTTPS confirms its remote `mission-81-shader64-rendergraph` at `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. The existing local Metal worktree is on `mission-55-6-codemagic` with a pre-existing modified `src/game/skybox.c`; the Mission 81 worktree has pre-existing untracked `--repo`; Mission 82 has pre-existing gameplay/runtime modifications. All were left untouched.
+ 
+-Next: implement and test a portable full-`ColorCombiner` MSL source generator, then integrate it into a fresh iOS backend and SDL Metal surface while retaining GL fallback. Linux builds do not validate UIKit/Metal code. iOS build/IPA/device validation remains pending Xcode/macOS runner access.
++Current commit: `36fd9adb` (combiner adapter); backend and SDL integration are uncommitted at handoff. The next step is to review/fix the Objective-C backend and its color/texture semantics, then validate with the proper pinned SDL2 dependency on a macOS/Xcode runner. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
+diff --git a/METAL_INTEGRATION_PLAN.md b/METAL_INTEGRATION_PLAN.md
+index 1ce21b7d310fe101605e53f5879b271c8efd1f31..913faa1492d6872262f09896a8c55fff2f33e42e 100644
+--- a/METAL_INTEGRATION_PLAN.md
++++ b/METAL_INTEGRATION_PLAN.md
+@@ -36,3 +36,11 @@ The inspected CoopDX iOS and `sm64ios-metal` repository roots do not contain a p
+ 3. Add SDL Metal surface/present integration and restart-required backend choice, retaining OpenGL ES fallback.
+ 4. Validate combiner/state behavior with host tests and Apple Metal shader compilation; build on a macOS runner before claiming iOS compilation.
+ 5. Exercise vanilla rendering, then DynOS/custom assets and Lua-driven graphics behavior. Defer post-processing and other effects until vanilla parity.
++
++## Current implementation checkpoint
++
++- A portable C generator now translates the CoopDX combiner commands to MSL and computes a canonical key from all combiner values, flags, input mapping, and commands. Its host tests cover the generated shader shape, key equality and vertex layout.
++- An iOS Objective-C Metal backend has been added behind `GfxRenderingAPI`. It creates pipelines from the generated MSL, uploads RGBA textures, binds two tiles, implements depth/blend/decal/viewport/scissor state, and submits the frontend's triangle batches. GPU texture memory and per-batch vertex memory are bounded.
++- SDL now creates a Metal view/layer when Metal is selected. The display menu offers OpenGL ES and Metal on iOS. OpenGL ES remains the default and Metal initialization or built-in shader precompile errors trigger a restart-free initialization fallback to OpenGL ES.
++- The backend is currently **source implemented, not Apple compiled**. Runtime combiner variants used after startup can still fail independently; that path logs a diagnostic but does not hot-switch renderers. Full rendering parity is not claimed. Unsupported details are recorded in `RENDERER_PARITY.md`.
++- iOS CMake/IPA validation is blocked locally by the absent `lib/SDL2-source` directory and absent Xcode/iOS SDK tools. Do not use the current source checkpoint as a device-test build until those prerequisites are restored and Apple compilation succeeds.
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+index 84a11053315146dca03b344a0442d5fc0705da5d..c5fc0aa743a6f559d8f255d7bfbd7195cb3ddd5d 100644
+--- a/RENDERER_PARITY.md
++++ b/RENDERER_PARITY.md
+@@ -3,17 +3,17 @@
+ | Feature | CoopDX OpenGL ES behavior | Metal status | Evidence / remaining work |
+ |---|---|---|---|
+ | Display-list and DynOS frontend | Shared `gfx_pc.c` interpreter and texture decoder | Must remain shared | No renderer port may bypass this frontend |
+-| Color combiner | `ColorCombiner` command stream; generated GLSL | Not implemented yet | Build a full semantic MSL adapter; do not convert to the old packed ID |
+-| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Not implemented yet | Derive `MTLVertexDescriptor` from combiner metadata |
+-| Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Not implemented yet | Cache invalidation, sampler modes and repeated DynOS replacement tests |
+-| Depth and decal | Backend depth test/write and z-mode decal callbacks | Not implemented yet | Pipeline/depth state parity tests |
+-| Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Not implemented yet | Correct blend factors/order and test translucent surfaces |
+-| Fog | Per-vertex fog attribute under combiner flag | Not implemented yet | Preserve fog factor and color semantics |
+-| Light-map path | Secondary UV, texture 1 and light-map color | Not implemented yet | Need audit the exact light-map uniform source |
+-| Viewport/scissor | Callback-driven screen state | Not implemented yet | Drawable scale and orientation validation |
+-| Frame lifecycle | SDL GL context, GL clear/swap | Not implemented yet | Metal drawable acquisition, command completion and present |
+-| HUD/UI/DJUI | Same display-list frontend with blended draws | Not implemented yet | Validate text/texture paths after base material parity |
+-| Character animation / DynOS | Same game and graphics frontend | Not implemented yet | Runtime-loaded geometry and texture invalidation test |
++| Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented, host-tested source generator; MSL not Apple-compiled | Full key and basic 1/2-cycle formula, fog, edge discard and light-map handling; shader flags/dither/filter parity remain incomplete |
++| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source implemented | Dynamic descriptor follows generated metadata; no iOS compiler validation yet |
++| Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Backend source implemented | Bounded cache and sampler creation; no invalidation/deletion callback exists in current API; DynOS replacement lifetime unverified |
++| Depth and decal | Backend depth test/write and z-mode decal callbacks | Backend source implemented | LEQUAL/always states and polygon depth bias; no GPU validation |
++| Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Backend source implemented | GL blend factors are represented; no visual test of ordering or blend parity |
++| Fog | Per-vertex fog attribute under combiner flag | Generator/backend source implemented | MSL mixes interpolated fog; no visual validation |
++| Light-map path | Secondary UV, texture 1 and light-map color | Generator/backend source implemented | Uses `gVertexColor`; requires comparison against real scenes |
++| Viewport/scissor | Callback-driven screen state | SDL Metal dimensions and backend state implemented | iOS drawable scale/orientation and coordinate mapping unverified |
++| Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal layer, drawable, command buffer, depth target and present source implemented | No Metal SDK compile/runtime validation |
++| HUD/UI/DJUI | Same display-list frontend with blended draws | Expected to share the frontend | Not tested; textured glyphs and special combiner paths remain a parity risk |
++| Character animation / DynOS | Same game and graphics frontend | Uses the same planned backend submission path | Not tested; texture cleanup and repeated model switching need runtime tests |
+ | OpenGL ES fallback | Current iOS default | Preserved in source | Must remain known-good and recoverable from failed Metal initialization |
+ 
+ Terms such as “Metal backend”, “iOS build”, and “parity” remain unverified until the corresponding compile/runtime/device evidence is recorded.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index f62ea0e1577c6fc404a746e504b13563479c93f4..35c05029986443c44253293b103a0ed0138090ed 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -8,6 +8,16 @@
+ - iOS configure/build/IPA: not run successfully; the Linux environment has neither `xcodebuild` nor `xcrun`. `build_ios.sh generate` exits at its Xcode tools prerequisite.
+ - No Metal shader has been compiled by Apple's Metal compiler; no iPhone runtime or pixels have been verified.
+ 
++## Mission 02 checkpoint (`mission-02-metal-integration`)
++
++- `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
++- `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed under ASan/UBSan.
++- `make -j2` — passed after C/UI/SDL selection changes; links `build/us_pc/sm64coopdx`. The Linux build does not compile the iOS-only Objective-C Metal source.
++- `git diff --check` — passed.
++- `xcodebuild` and `xcrun` are absent in this environment. `lib/SDL2-source` is also absent, although `CMakeLists.txt` requires it and applies local SDL patches there. Consequently no iOS CMake configure, Apple Metal compilation, arm64 link, IPA packaging, or device execution has occurred.
++- Metal renderer source has only been reviewed locally; no claim of Metal SDK validity, rendering parity, mod rendering, or on-device functionality is made.
++- `make test` remains blocked by the missing `mupen64plus` executable noted in the baseline.
++
+ ## Required evidence labels
+ 
+ - **Source checked:** interfaces and call flow inspected only.
+diff --git a/src/pc/configfile.c b/src/pc/configfile.c
+index c3e90c142075085561a7228772b2c3bcfcedd015..03299727ecd7743c0afa74eb87a56eefa16616f7 100644
+--- a/src/pc/configfile.c
++++ b/src/pc/configfile.c
+@@ -901,7 +901,7 @@ NEXT_OPTION:
+ 
+     fs_close(file);
+ 
+-    if (configGraphicsBackend < GAPI_GL || configGraphicsBackend > GAPI_MAX) { configGraphicsBackend = GAPI_GL; }
++    if (configGraphicsBackend < GAPI_GL || configGraphicsBackend >= GAPI_MAX) { configGraphicsBackend = GAPI_GL; }
+ 
+     if (configFramerateMode < 0 || configFramerateMode > RRM_MAX) { configFramerateMode = 0; }
+     if (configFrameLimit < 30)   { configFrameLimit = 30; }
+diff --git a/src/pc/configfile.h b/src/pc/configfile.h
+index d6990e9720f324c9d507ff04788aaa6068fb67e2..371d37e798952b54057dc19445eebed76049a787 100644
+--- a/src/pc/configfile.h
++++ b/src/pc/configfile.h
+@@ -46,6 +46,9 @@ enum RefreshRateMode {
+ 
+ enum GraphicsBackend {
+     GAPI_GL,
++#if defined(TARGET_IOS)
++    GAPI_METAL,
++#endif
+ #if defined(_WIN32)
+     GAPI_D3D11,
+ #endif
+diff --git a/src/pc/djui/djui_panel_display.c b/src/pc/djui/djui_panel_display.c
+index 609836372fba7b08ece2704a9c117221e794791d..0ec9579c7f5ce37c20f96407bb9aaae016e412e1 100644
+--- a/src/pc/djui/djui_panel_display.c
++++ b/src/pc/djui/djui_panel_display.c
+@@ -87,13 +87,18 @@ void djui_panel_display_create(struct DjuiBase* caller) {
+             djui_checkbox_create(body, "HiDPI", &configWindow.hidpi, djui_panel_display_hidpi_change);
+         }
+ 
+-        if (GAPI_MAX > 1) {
++#if defined(TARGET_IOS) || defined(_WIN32)
++#ifdef TARGET_IOS
++            char* gfxBackendChoices[2] = { "OpenGL ES", "Metal" };
++            djui_selectionbox_create(body, DLANG(DISPLAY, GRAPHICS_BACKEND), gfxBackendChoices, 2, &configGraphicsBackend, djui_panel_display_update_restart_text);
++#elif defined(_WIN32)
+             char* gfxBackendChoices[2] = {
+                 "OpenGL",
+                 "DirectX 11"
+             };
+             djui_selectionbox_create(body, DLANG(DISPLAY, GRAPHICS_BACKEND), gfxBackendChoices, 2, &configGraphicsBackend, djui_panel_display_update_restart_text);
+-        }
++#endif
++#endif
+ 
+         char* framerateModeChoices[3] = { DLANG(DISPLAY, AUTO), DLANG(DISPLAY, MANUAL), DLANG(DISPLAY, UNCAPPED) };
+         djui_selectionbox_create(body, DLANG(DISPLAY, FRAMERATE_MODE), framerateModeChoices, 3, &configFramerateMode, djui_panel_display_framerate_mode_change);
+diff --git a/src/pc/gfx/gfx_metal_coopdx.h b/src/pc/gfx/gfx_metal_coopdx.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..371949e37be2efb6c319ee052e589f74831d8492
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx.h
+@@ -0,0 +1,10 @@
++#ifndef GFX_METAL_COOPDX_H
++#define GFX_METAL_COOPDX_H
++
++#include "gfx_rendering_api.h"
++
++extern struct GfxRenderingAPI gfx_metal_coopdx_api;
++bool gfx_metal_coopdx_is_ready(void);
++bool gfx_metal_coopdx_had_pipeline_error(void);
++
++#endif
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+new file mode 100644
+index 0000000000000000000000000000000000000000..cce39720276260c9bb02a79347b7b5331a21ed9f
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -0,0 +1,380 @@
++#import <Foundation/Foundation.h>
++#import <Metal/Metal.h>
++#import <QuartzCore/CAMetalLayer.h>
++#include <SDL2/SDL.h>
++#include <SDL2/SDL_metal.h>
++#include <PR/gbi.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "gfx_metal_coopdx.h"
++#include "gfx_metal_coopdx_shader.h"
++#include "gfx_sdl.h"
++#include "gfx_pc.h"
++#include "gfx_cc.h"
++
++#define METAL_SHADER_LIMIT 64
++#define METAL_TEXTURE_LIMIT 32768
++#define METAL_MAX_BUFFER_BYTES (32u * 1024u * 1024u)
++#define METAL_MAX_TEXTURE_BYTES (256u * 1024u * 1024u)
++#define METAL_MAX_SINGLE_TEXTURE_BYTES (16u * 1024u * 1024u)
++
++struct MetalProgram {
++    struct GfxMetalCoopDXShaderKey key;
++    struct GfxMetalCoopDXShaderInfo info;
++    id<MTLRenderPipelineState> pipeline[2];
++};
++
++static id<MTLDevice> sDevice;
++static id<MTLCommandQueue> sQueue;
++static id<CAMetalDrawable> sDrawable;
++static id<MTLCommandBuffer> sCommandBuffer;
++static id<MTLRenderCommandEncoder> sEncoder;
++static id<MTLTexture> sDepth;
++static id<MTLBuffer> sVertexBuffer;
++static NSUInteger sVertexCapacity;
++static NSUInteger sTextureBytes;
++static struct MetalProgram sPrograms[METAL_SHADER_LIMIT];
++static NSUInteger sProgramCount;
++static id<MTLTexture> sTextures[METAL_TEXTURE_LIMIT];
++static uint32_t sNextTexture = 1;
++static id<MTLTexture> sWhiteTexture;
++static id<MTLDepthStencilState> sDepthStates[2][2];
++static id<MTLSamplerState> sSamplers[2];
++static bool sLinear[2];
++static uint32_t sWrapS[2], sWrapT[2];
++static uint32_t sSelectedTexture[2];
++static int sUploadTile;
++static struct MetalProgram *sProgram;
++static bool sAlpha, sDepthEnabled = true, sDepthWrite = true, sDecal;
++static NSUInteger sWidth, sHeight;
++static uint32_t sFrame;
++static bool sReady;
++static bool sPipelineError;
++
++static bool metal_z_is_zero_to_one(void) { return true; }
++bool gfx_metal_coopdx_is_ready(void) { return sReady; }
++bool gfx_metal_coopdx_had_pipeline_error(void) { return sPipelineError; }
++
++static id<MTLTexture> make_white_texture(void) {
++    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:1 height:1 mipmapped:NO];
++    d.usage = MTLTextureUsageShaderRead;
++    d.storageMode = MTLStorageModeShared;
++    id<MTLTexture> t = [sDevice newTextureWithDescriptor:d];
++    const uint8_t white[4] = { 255, 255, 255, 255 };
++    [t replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:white bytesPerRow:4];
++    return t;
++}
++
++static MTLAddressMode address_mode(uint32_t mode) {
++    if (mode & G_TX_CLAMP) return MTLAddressModeClampToEdge;
++    if (mode & G_TX_MIRROR) return MTLAddressModeMirrorRepeat;
++    return MTLAddressModeRepeat;
++}
++
++static void update_sampler(int tile) {
++    if (tile < 0 || tile > 1 || !sDevice) return;
++    MTLSamplerDescriptor *d = [[MTLSamplerDescriptor alloc] init];
++    d.minFilter = sLinear[tile] ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
++    d.magFilter = sLinear[tile] ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
++    d.mipFilter = MTLSamplerMipFilterNotMipmapped;
++    d.sAddressMode = address_mode(sWrapS[tile]);
++    d.tAddressMode = address_mode(sWrapT[tile]);
++    sSamplers[tile] = [sDevice newSamplerStateWithDescriptor:d];
++}
++
++static MTLVertexFormat vertex_format(uint8_t size) {
++    switch (size) {
++        case 2: return MTLVertexFormatFloat2;
++        case 3: return MTLVertexFormatFloat3;
++        default: return MTLVertexFormatFloat4;
++    }
++}
++
++/* Build from the original combiner on first lookup; full semantic keying avoids relying on its hash. */
++static id<MTLRenderPipelineState> make_pipeline(struct ColorCombiner *cc, struct MetalProgram *p, bool blend) {
++    char source[32768];
++    struct GfxMetalCoopDXShaderInfo info;
++    if (!gfx_metal_coopdx_build_shader(cc, source, sizeof(source), &info)) { sPipelineError = true; return nil; }
++    NSError *error = nil;
++    NSString *msl = [NSString stringWithUTF8String:source];
++    id<MTLLibrary> library = [sDevice newLibraryWithSource:msl options:nil error:&error];
++    if (!library) {
++        sPipelineError = true;
++        fprintf(stderr, "Metal combiner compile failed: %s\n", error.localizedDescription.UTF8String ?: "unknown error");
++        return nil;
++    }
++    id<MTLFunction> vertex = [library newFunctionWithName:@"coopdx_vertex"];
++    id<MTLFunction> fragment = [library newFunctionWithName:@"coopdx_fragment"];
++    if (!vertex || !fragment) {
++        sPipelineError = true;
++        fprintf(stderr, "Metal combiner library is missing required entry points\n");
++        return nil;
++    }
++
++    MTLVertexDescriptor *vd = [[MTLVertexDescriptor alloc] init];
++    uint32_t attribute = 0, offset = 0;
++    vd.attributes[attribute].format = MTLVertexFormatFloat4;
++    vd.attributes[attribute].offset = offset; vd.attributes[attribute].bufferIndex = 0;
++    offset += 4 * sizeof(float); attribute++;
++    for (int t = 0; t < 2; ++t) if (info.features.used_textures[t]) {
++        vd.attributes[attribute].format = MTLVertexFormatFloat2;
++        vd.attributes[attribute].offset = offset; vd.attributes[attribute].bufferIndex = 0;
++        offset += 2 * sizeof(float); attribute++;
++    }
++    if (info.fog) {
++        vd.attributes[attribute].format = MTLVertexFormatFloat4;
++        vd.attributes[attribute].offset = offset; vd.attributes[attribute].bufferIndex = 0;
++        offset += 4 * sizeof(float); attribute++;
++    }
++    if (info.light_map) {
++        vd.attributes[attribute].format = MTLVertexFormatFloat2;
++        vd.attributes[attribute].offset = offset; vd.attributes[attribute].bufferIndex = 0;
++        offset += 2 * sizeof(float); attribute++;
++    }
++    for (int i = 0; i < info.features.num_inputs; ++i) {
++        uint8_t n = info.alpha ? 4 : 3;
++        vd.attributes[attribute].format = vertex_format(n);
++        vd.attributes[attribute].offset = offset; vd.attributes[attribute].bufferIndex = 0;
++        offset += n * sizeof(float); attribute++;
++    }
++    vd.layouts[0].stride = offset;
++    vd.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
++
++    MTLRenderPipelineDescriptor *d = [[MTLRenderPipelineDescriptor alloc] init];
++    d.vertexFunction = vertex;
++    d.fragmentFunction = fragment;
++    d.vertexDescriptor = vd;
++    d.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
++    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
++    if (blend) {
++        d.colorAttachments[0].blendingEnabled = YES;
++        d.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
++        d.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
++        d.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
++        d.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
++        d.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
++        d.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
++    }
++    id<MTLRenderPipelineState> pipeline = [sDevice newRenderPipelineStateWithDescriptor:d error:&error];
++    if (!pipeline) { sPipelineError = true; fprintf(stderr, "Metal pipeline creation failed: %s\n", error.localizedDescription.UTF8String ?: "unknown error"); }
++    else p->info = info;
++    return pipeline;
++}
++
++static void metal_unload_shader(struct ShaderProgram *old) { (void)old; }
++static void metal_load_shader(struct ShaderProgram *program) { sProgram = (struct MetalProgram *)program; }
++
++static struct ShaderProgram *metal_lookup_shader(struct ColorCombiner *cc) {
++    struct GfxMetalCoopDXShaderKey key;
++    if (!sReady || !gfx_metal_coopdx_shader_key(cc, &key)) return NULL;
++    for (NSUInteger i = 0; i < sProgramCount; ++i) {
++        if (gfx_metal_coopdx_shader_key_equal(&sPrograms[i].key, &key)) return (struct ShaderProgram *)&sPrograms[i];
++    }
++    return NULL;
++}
++
++static struct ShaderProgram *metal_create_shader(struct ColorCombiner *cc) {
++    struct MetalProgram *p = (struct MetalProgram *)metal_lookup_shader(cc);
++    if (p) { sProgram = p; return (struct ShaderProgram *)p; }
++    if (sProgramCount == METAL_SHADER_LIMIT) {
++        fprintf(stderr, "Metal shader cache limit reached (%d)\n", METAL_SHADER_LIMIT);
++        return NULL;
++    }
++    struct GfxMetalCoopDXShaderKey key;
++    if (!gfx_metal_coopdx_shader_key(cc, &key)) return NULL;
++    p = &sPrograms[sProgramCount];
++    memset(p, 0, sizeof(*p));
++    p->key = key;
++    p->pipeline[0] = make_pipeline(cc, p, false);
++    p->pipeline[1] = make_pipeline(cc, p, true);
++    if (!p->pipeline[0] || !p->pipeline[1]) {
++        sPipelineError = true;
++        p->pipeline[0] = nil; p->pipeline[1] = nil;
++        return NULL;
++    }
++    sProgramCount++;
++    sProgram = p;
++    return (struct ShaderProgram *)p;
++}
++
++static void metal_shader_get_info(struct ShaderProgram *program, uint8_t *numInputs, bool usedTextures[2]) {
++    struct MetalProgram *p = (struct MetalProgram *)program;
++    if (numInputs) *numInputs = (uint8_t)p->info.features.num_inputs;
++    if (usedTextures) { usedTextures[0] = p->info.features.used_textures[0]; usedTextures[1] = p->info.features.used_textures[1]; }
++}
++
++static uint32_t metal_new_texture(void) {
++    if (sNextTexture >= METAL_TEXTURE_LIMIT) { fprintf(stderr, "Metal texture cache limit reached\n"); return 0; }
++    return sNextTexture++;
++}
++static void metal_select_texture(int tile, uint32_t id) {
++    if (tile < 0 || tile > 1) return;
++    sUploadTile = tile;
++    sSelectedTexture[tile] = id < METAL_TEXTURE_LIMIT ? id : 0;
++}
++static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
++    int tile = sUploadTile;
++    uint32_t id = sSelectedTexture[tile];
++    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || id == 0 || id >= METAL_TEXTURE_LIMIT) return;
++    NSUInteger bytes = (NSUInteger)width * (NSUInteger)height * 4;
++    if (bytes > METAL_MAX_SINGLE_TEXTURE_BYTES) return;
++    NSUInteger oldBytes = sTextures[id] ? sTextures[id].width * sTextures[id].height * 4 : 0;
++    if (sTextureBytes - oldBytes + bytes > METAL_MAX_TEXTURE_BYTES) {
++        fprintf(stderr, "Metal texture memory budget exceeded\n");
++        return;
++    }
++    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:(NSUInteger)width height:(NSUInteger)height mipmapped:NO];
++    d.usage = MTLTextureUsageShaderRead;
++    d.storageMode = MTLStorageModeShared;
++    id<MTLTexture> texture = [sDevice newTextureWithDescriptor:d];
++    if (!texture) return;
++    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
++    sTextures[id] = texture;
++    sTextureBytes = sTextureBytes - oldBytes + bytes;
++}
++static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
++    if (tile < 0 || tile > 1) return;
++    sLinear[tile] = linear; sWrapS[tile] = cms; sWrapT[tile] = cmt; update_sampler(tile);
++}
++static void metal_set_depth_test(bool enabled) { sDepthEnabled = enabled; }
++static void metal_set_depth_mask(bool enabled) { sDepthWrite = enabled; }
++static void metal_set_decal(bool enabled) { sDecal = enabled; }
++static void metal_set_viewport(int x, int y, int w, int h) {
++    if (!sEncoder || w <= 0 || h <= 0) return;
++    MTLViewport v = { (double)x, (double)sHeight - (double)y - (double)h, (double)w, (double)h, 0.0, 1.0 };
++    [sEncoder setViewport:v];
++}
++static void metal_set_scissor(int x, int y, int w, int h) {
++    if (!sEncoder || w <= 0 || h <= 0) return;
++    NSUInteger sx = (NSUInteger)MAX(0, x), rawY = (NSUInteger)MAX(0, y);
++    NSUInteger sy = rawY < sHeight ? sHeight - MIN(sHeight, rawY + (NSUInteger)h) : 0;
++    NSUInteger ex = MIN(sWidth, sx + (NSUInteger)w), ey = MIN(sHeight, sy + (NSUInteger)h);
++    if (ex <= sx || ey <= sy) return;
++    [sEncoder setScissorRect:MTLScissorRectMake(sx, sy, ex - sx, ey - sy)];
++}
++static void metal_set_alpha(bool enabled) { sAlpha = enabled; }
++
++static void metal_draw_triangles(float *vertices, size_t floatCount, size_t triangleCount) {
++    if (!sEncoder || !sProgram || !vertices || !triangleCount || triangleCount > UINT32_MAX / 3) return;
++    id<MTLRenderPipelineState> pipeline = sProgram->pipeline[sAlpha ? 1 : 0];
++    if (!pipeline) return;
++    if (floatCount > METAL_MAX_BUFFER_BYTES / sizeof(float)) return;
++    size_t bytes = floatCount * sizeof(float);
++    if (bytes == 0 || bytes > METAL_MAX_BUFFER_BYTES) { fprintf(stderr, "Metal vertex batch rejected (%zu bytes)\n", bytes); return; }
++    if (triangleCount * 3 * sProgram->info.vertex_stride != bytes) {
++        fprintf(stderr, "Metal vertex batch stride mismatch\n");
++        return;
++    }
++    if (!sVertexBuffer || sVertexCapacity < bytes) {
++        NSUInteger capacity = 4096;
++        while (capacity < bytes && capacity < METAL_MAX_BUFFER_BYTES) capacity *= 2;
++        if (capacity > METAL_MAX_BUFFER_BYTES) capacity = METAL_MAX_BUFFER_BYTES;
++        id<MTLBuffer> replacement = [sDevice newBufferWithLength:capacity options:MTLResourceStorageModeShared];
++        if (!replacement) return;
++        sVertexBuffer = replacement; sVertexCapacity = capacity;
++    }
++    memcpy(sVertexBuffer.contents, vertices, bytes);
++    [sEncoder setRenderPipelineState:pipeline];
++    [sEncoder setDepthStencilState:sDepthStates[sDepthEnabled ? 1 : 0][sDepthWrite ? 1 : 0]];
++    [sEncoder setDepthBias:sDecal ? -2.0 : 0.0 slopeScale:sDecal ? -2.0 : 0.0 clamp:0.0];
++    [sEncoder setVertexBuffer:sVertexBuffer offset:0 atIndex:0];
++    for (int tile = 0; tile < 2; ++tile) {
++        id<MTLTexture> t = sTextures[sSelectedTexture[tile]] ?: sWhiteTexture;
++        [sEncoder setFragmentTexture:t atIndex:tile];
++        [sEncoder setFragmentSamplerState:sSamplers[tile] atIndex:tile];
++    }
++    vector_float3 color = (vector_float3){ gVertexColor[0] / 255.0f, gVertexColor[1] / 255.0f, gVertexColor[2] / 255.0f };
++    [sEncoder setFragmentBytes:&color length:sizeof(color) atIndex:0];
++    float frame = (float)sFrame;
++    [sEncoder setFragmentBytes:&frame length:sizeof(frame) atIndex:1];
++    [sEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)triangleCount * 3];
++}
++
++static void metal_init(void) {
++    sReady = false;
++    sPipelineError = false;
++    id layerValue = (__bridge id)gfx_sdl_get_metal_layer();
++    if (!gfx_sdl_uses_metal() || !layerValue) { fprintf(stderr, "Metal renderer requires an SDL Metal view\n"); return; }
++    sDevice = MTLCreateSystemDefaultDevice();
++    if (!sDevice) { fprintf(stderr, "No Metal device is available\n"); return; }
++    sQueue = [sDevice newCommandQueue];
++    if (!sQueue) { fprintf(stderr, "Metal command queue creation failed\n"); return; }
++    CAMetalLayer *layer = (__bridge CAMetalLayer *)gfx_sdl_get_metal_layer();
++    layer.device = sDevice;
++    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
++    layer.framebufferOnly = YES;
++    layer.maximumDrawableCount = 3;
++    sWhiteTexture = make_white_texture();
++    for (int d = 0; d < 2; ++d) for (int w = 0; w < 2; ++w) {
++        MTLDepthStencilDescriptor *desc = [[MTLDepthStencilDescriptor alloc] init];
++        desc.depthCompareFunction = d ? MTLCompareFunctionLessEqual : MTLCompareFunctionAlways;
++        desc.depthWriteEnabled = d && w;
++        sDepthStates[d][w] = [sDevice newDepthStencilStateWithDescriptor:desc];
++    }
++    for (int t = 0; t < 2; ++t) { sWrapS[t] = G_TX_WRAP; sWrapT[t] = G_TX_WRAP; update_sampler(t); }
++    sReady = sWhiteTexture && sDepthStates[0][0] && sDepthStates[1][1];
++}
++
++static void metal_resize(void) { sWidth = 0; sHeight = 0; }
++static void metal_start_frame(void) {
++    if (!sReady) return;
++    ++sFrame;
++    sDrawable = [(CAMetalLayer *)gfx_sdl_get_metal_layer() nextDrawable];
++    if (!sDrawable) return;
++    sWidth = sDrawable.texture.width; sHeight = sDrawable.texture.height;
++    sCommandBuffer = [sQueue commandBuffer];
++    if (sWidth != sDepth.width || sHeight != sDepth.height) {
++        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float width:sWidth height:sHeight mipmapped:NO];
++        d.usage = MTLTextureUsageRenderTarget;
++        d.storageMode = MTLStorageModePrivate;
++        sDepth = [sDevice newTextureWithDescriptor:d];
++    }
++    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
++    pass.colorAttachments[0].texture = sDrawable.texture;
++    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
++    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
++    pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
++    pass.depthAttachment.texture = sDepth;
++    pass.depthAttachment.loadAction = MTLLoadActionClear;
++    pass.depthAttachment.storeAction = MTLStoreActionDontCare;
++    pass.depthAttachment.clearDepth = 1.0;
++    sEncoder = [sCommandBuffer renderCommandEncoderWithDescriptor:pass];
++    sAlpha = false; sDepthEnabled = true; sDepthWrite = true; sDecal = false;
++}
++static void metal_end_frame(void) {
++    if (sEncoder) { [sEncoder endEncoding]; sEncoder = nil; }
++}
++static void metal_finish_render(void) {
++    if (!sCommandBuffer) return;
++    if (sEncoder) metal_end_frame();
++    if (sDrawable) [sCommandBuffer presentDrawable:sDrawable];
++    [sCommandBuffer commit];
++    sCommandBuffer = nil; sDrawable = nil;
++}
++static const char *metal_name(void) { return "Metal (CoopDX)"; }
++static void metal_shutdown(void) {
++    sReady = false;
++    sEncoder = nil; sCommandBuffer = nil; sDrawable = nil; sDepth = nil; sVertexBuffer = nil;
++    sProgram = NULL; sProgramCount = 0; sVertexCapacity = 0;
++    sTextureBytes = 0;
++    sNextTexture = 1; sUploadTile = 0;
++    memset(sSelectedTexture, 0, sizeof(sSelectedTexture));
++    memset(sPrograms, 0, sizeof(sPrograms));
++    for (NSUInteger i = 0; i < METAL_TEXTURE_LIMIT; ++i) sTextures[i] = nil;
++    sDepthStates[0][0] = nil; sDepthStates[0][1] = nil;
++    sDepthStates[1][0] = nil; sDepthStates[1][1] = nil;
++    sSamplers[0] = nil; sSamplers[1] = nil;
++    sDevice = nil; sQueue = nil; sWhiteTexture = nil;
++}
++
++struct GfxRenderingAPI gfx_metal_coopdx_api = {
++    metal_z_is_zero_to_one, metal_unload_shader, metal_load_shader,
++    metal_create_shader, metal_lookup_shader, metal_shader_get_info,
++    metal_new_texture, metal_select_texture, metal_upload_texture, metal_set_sampler,
++    metal_set_depth_test, metal_set_depth_mask, metal_set_decal, metal_set_viewport,
++    metal_set_scissor, metal_set_alpha, metal_draw_triangles,
++    metal_init, metal_resize, metal_start_frame, metal_end_frame, metal_finish_render,
++    metal_name, metal_shutdown
++};
+diff --git a/src/pc/gfx/gfx_pc.c b/src/pc/gfx/gfx_pc.c
+index 656343098195f44160eaa25e60385ec0b77e73de..daade50e865e55d01b5e8666d87d8895296283d0 100644
+--- a/src/pc/gfx/gfx_pc.c
++++ b/src/pc/gfx/gfx_pc.c
+@@ -36,6 +36,10 @@
+ #include "pc/gfx/gfx_cc.h"
+ #include "pc/gfx/gfx_pc.h"
+ #include "pc/gfx/gfx_rendering_api.h"
++#ifdef TARGET_IOS
++#include "pc/gfx/gfx_metal_coopdx.h"
++#include "pc/gfx/gfx_opengl.h"
++#endif
+ #include "pc/gfx/gfx_screen_config.h"
+ #include "pc/gfx/gfx_window_manager_api.h"
+ 
+@@ -47,6 +51,7 @@ static struct TextureCache gfx_texture_cache = { 0 };
+ static struct ColorCombiner color_combiner_pool[CC_MAX_SHADERS] = { 0 };
+ static uint8_t color_combiner_pool_size = 0;
+ static uint8_t color_combiner_pool_index = 0;
++static struct ColorCombiner *prev_color_combiner = NULL;
+ 
+ struct RSP {
+     ALIGNED16 Mat4 MP_matrix;
+@@ -298,14 +303,13 @@ static void gfx_generate_cc(struct ColorCombiner *cc) {
+ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(struct CombineMode* cm) {
+     combine_mode_update_hash(cm);
+ 
+-    static struct ColorCombiner *prev_combiner;
+-    if (prev_combiner != NULL && prev_combiner->cm.hash == cm->hash) {
+-        return prev_combiner;
++    if (prev_color_combiner != NULL && prev_color_combiner->cm.hash == cm->hash) {
++        return prev_color_combiner;
+     }
+ 
+     for (size_t i = 0; i < color_combiner_pool_size; i++) {
+         if (color_combiner_pool[i].cm.hash == cm->hash) {
+-            return prev_combiner = &color_combiner_pool[i];
++            return prev_color_combiner = &color_combiner_pool[i];
+         }
+     }
+ 
+@@ -318,7 +322,15 @@ static struct ColorCombiner *gfx_lookup_or_create_color_combiner(struct CombineM
+     memcpy(&comb->cm, cm, sizeof(struct CombineMode));
+     gfx_generate_cc(comb);
+ 
+-    return prev_combiner = comb;
++    return prev_color_combiner = comb;
++}
++
++static void gfx_reset_color_combiner_cache(void) {
++    memset(color_combiner_pool, 0, sizeof(color_combiner_pool));
++    color_combiner_pool_size = 0;
++    color_combiner_pool_index = 0;
++    prev_color_combiner = NULL;
++    rendering_state.shader_program = NULL;
+ }
+ 
+ void gfx_texture_cache_clear(void) {
+@@ -2069,8 +2081,36 @@ void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, co
+     gfx_wapi->init(window_title);
+     gfx_rapi->init();
+ 
++#ifdef TARGET_IOS
++    if (gfx_rapi == &gfx_metal_coopdx_api && !gfx_metal_coopdx_is_ready()) {
++        fprintf(stderr, "Metal initialization failed; restoring OpenGL ES renderer\n");
++        if (gfx_rapi->shutdown) gfx_rapi->shutdown();
++        if (gfx_wapi->shutdown) gfx_wapi->shutdown();
++        configGraphicsBackend = GAPI_GL;
++        gfx_wapi->init(window_title);
++        gfx_rapi = &gfx_opengl_api;
++        gRenderApi = gfx_rapi;
++        gfx_rapi->init();
++    }
++#endif
++
+     gfx_cc_precomp();
+ 
++#ifdef TARGET_IOS
++    if (gfx_rapi == &gfx_metal_coopdx_api && gfx_metal_coopdx_had_pipeline_error()) {
++        fprintf(stderr, "Metal shader precompilation failed; restoring OpenGL ES renderer\n");
++        gfx_rapi->shutdown();
++        gfx_wapi->shutdown();
++        configGraphicsBackend = GAPI_GL;
++        gfx_wapi->init(window_title);
++        gfx_rapi = &gfx_opengl_api;
++        gRenderApi = gfx_rapi;
++        gfx_rapi->init();
++        gfx_reset_color_combiner_cache();
++        gfx_cc_precomp();
++    }
++#endif
++
+     gGfxInited = true;
+ }
+ 
+diff --git a/src/pc/gfx/gfx_sdl.c b/src/pc/gfx/gfx_sdl.c
+index d5c99e07ad12aac00be04e26c9b23017bf7501d1..9ea28fb6f7f0f42538f997340148866fe00d809f 100644
+--- a/src/pc/gfx/gfx_sdl.c
++++ b/src/pc/gfx/gfx_sdl.c
+@@ -5,6 +5,9 @@
+ #endif
+ 
+ #include <SDL2/SDL.h>
++#ifdef TARGET_IOS
++#include <SDL2/SDL_metal.h>
++#endif
+ 
+ #if defined(_WIN32)
+ #include <windows.h>
+@@ -64,6 +67,9 @@
+ 
+ static SDL_Window *wnd;
+ static SDL_GLContext ctx = NULL;
++#ifdef TARGET_IOS
++static SDL_MetalView metal_view = NULL;
++#endif
+ static bool sHidpiSupported = false;
+ static bool sHidpiActive = false;
+ static Uint32 sFileImportEvent = (Uint32)-1;
+@@ -84,6 +90,9 @@ static void (*m_scroll)(float, float) = NULL;
+ #define IS_FULLSCREEN() ((SDL_GetWindowFlags(wnd) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+ 
+ static inline void gfx_sdl_set_vsync(const bool enabled) {
++#ifdef TARGET_IOS
++    if (metal_view) return; // CAMetalLayer presentation is synchronized by the display.
++#endif
+     SDL_GL_SetSwapInterval(enabled);
+ }
+ 
+@@ -142,32 +151,37 @@ static void gfx_sdl_init(const char *window_title) {
+ #endif
+     SDL_StartTextInput();
+ 
+-    if (configWindow.msaa > 0) {
+-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, configWindow.msaa);
+-    } else {
+-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+-    }
+-
+-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+-
++    bool useMetal = false;
++#ifdef TARGET_IOS
++    useMetal = configGraphicsBackend == GAPI_METAL;
++#endif
++    if (!useMetal) {
++        if (configWindow.msaa > 0) {
++            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
++            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, configWindow.msaa);
++        } else {
++            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
++        }
++        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
++        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+ #ifdef USE_GLES
+ #ifdef TARGET_IOS
+-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
++        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
++        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+ #else
+-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);  // These attributes allow for hardware acceleration on RPis.
+-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
++        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);  // These attributes allow for hardware acceleration on RPis.
++        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+ #endif
+-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
++        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+ #endif
++    }
+ 
+     int xpos = (configWindow.x == WAPI_WIN_CENTERPOS) ? SDL_WINDOWPOS_CENTERED : configWindow.x;
+     int ypos = (configWindow.y == WAPI_WIN_CENTERPOS) ? SDL_WINDOWPOS_CENTERED : configWindow.y;
+ 
+     // Probe whether this display actually scales drawable > window under HIGHDPI.
+-    SDL_Window *probe = SDL_CreateWindow("", 0, 0, 64, 64, SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
++    SDL_Window *probe = NULL;
++    if (!useMetal) probe = SDL_CreateWindow("", 0, 0, 64, 64, SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL);
+     if (probe) {
+         int pdw = 64, pdh = 64, pww = 64, pwh = 64;
+         SDL_GL_GetDrawableSize(probe, &pdw, &pdh);
+@@ -175,21 +189,53 @@ static void gfx_sdl_init(const char *window_title) {
+         sHidpiSupported = (pdw > pww) || (pdh > pwh);
+         SDL_DestroyWindow(probe);
+     }
++#ifdef TARGET_IOS
++    else if (useMetal) {
++        sHidpiSupported = true;
++    }
++#endif
+ 
+-    Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
++    Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
++#ifdef TARGET_IOS
++    if (configGraphicsBackend == GAPI_METAL) {
++        windowFlags |= SDL_WINDOW_METAL;
++    } else
++#endif
++    {
++        windowFlags |= SDL_WINDOW_OPENGL;
++    }
+     if (configWindow.hidpi) { windowFlags |= SDL_WINDOW_ALLOW_HIGHDPI; }
+     wnd = SDL_CreateWindow(
+         window_title,
+         xpos, ypos, configWindow.w, configWindow.h,
+         windowFlags
+     );
+-    ctx = SDL_GL_CreateContext(wnd);
++    if (!wnd) {
++        fprintf(stderr, "SDL window creation failed: %s\n", SDL_GetError());
++        return;
++    }
++#ifdef TARGET_IOS
++    if (configGraphicsBackend == GAPI_METAL) {
++        metal_view = SDL_Metal_CreateView(wnd);
++        if (!metal_view) fprintf(stderr, "SDL Metal view creation failed: %s\n", SDL_GetError());
++    } else
++#endif
++    {
++        ctx = SDL_GL_CreateContext(wnd);
++    }
+ 
+     // Record actual HiDPI state — drives rendering decisions for this window's lifetime.
+     // Toggling the config takes effect only on restart.
+     {
+         int dw = 0, dh = 0, ww = 0, wh = 0;
+-        SDL_GL_GetDrawableSize(wnd, &dw, &dh);
++        if (ctx) SDL_GL_GetDrawableSize(wnd, &dw, &dh);
++        else {
++#ifdef TARGET_IOS
++            if (metal_view) SDL_Metal_GetDrawableSize(wnd, &dw, &dh);
++            else
++#endif
++                SDL_GetWindowSize(wnd, &dw, &dh);
++        }
+         SDL_GetWindowSize(wnd, &ww, &wh);
+         sHidpiActive = (dw > ww) || (dh > wh);
+     }
+@@ -244,6 +290,11 @@ static void gfx_sdl_main_loop(void (*run_one_game_iter)(void)) {
+ 
+ static void gfx_sdl_get_dimensions(uint32_t *width, uint32_t *height) {
+     int w, h;
++ #ifdef TARGET_IOS
++    if (metal_view) {
++        SDL_Metal_GetDrawableSize(wnd, &w, &h);
++    } else
++ #endif
+     if (sHidpiActive) {
+         SDL_GL_GetDrawableSize(wnd, &w, &h);
+     } else {
+@@ -260,7 +311,11 @@ bool gfx_sdl_hidpi_supported(void) {
+ void gfx_sdl_get_hidpi_scale(float *sx, float *sy) {
+     int dw = 1, dh = 1, ww = 1, wh = 1;
+     if (wnd && sHidpiActive) {
+-        SDL_GL_GetDrawableSize(wnd, &dw, &dh);
++#ifdef TARGET_IOS
++        if (metal_view) SDL_Metal_GetDrawableSize(wnd, &dw, &dh);
++        else
++#endif
++            SDL_GL_GetDrawableSize(wnd, &dw, &dh);
+         SDL_GetWindowSize(wnd, &ww, &wh);
+     }
+     if (sx) *sx = (ww > 0) ? ((float)dw / (float)ww) : 1.0f;
+@@ -484,6 +539,9 @@ static bool gfx_sdl_start_frame(void) {
+ }
+ 
+ static void gfx_sdl_swap_buffers_begin(void) {
++#ifdef TARGET_IOS
++    if (metal_view) return;
++#endif
+     SDL_GL_SwapWindow(wnd);
+ }
+ 
+@@ -499,6 +557,9 @@ static void gfx_sdl_delay(u32 ms) {
+ }
+ 
+ static int gfx_sdl_get_max_msaa(void) {
++#ifdef TARGET_IOS
++    if (metal_view) return 1;
++#endif
+     int maxSamples = 0;
+     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+     if (maxSamples > 16) { maxSamples = 16; }
+@@ -515,12 +576,23 @@ static void gfx_sdl_reset_window_title(void) {
+ 
+ static void gfx_sdl_shutdown(void) {
+     if (SDL_WasInit(0)) {
++#ifdef TARGET_IOS
++        if (metal_view) { SDL_Metal_DestroyView(metal_view); metal_view = NULL; }
++#endif
+         if (ctx) { SDL_GL_DeleteContext(ctx); ctx = NULL; }
+         if (wnd) { SDL_DestroyWindow(wnd); wnd = NULL; }
+         SDL_Quit();
+     }
+ }
+ 
++#ifdef TARGET_IOS
++void *gfx_sdl_get_metal_layer(void) {
++    return metal_view ? SDL_Metal_GetLayer(metal_view) : NULL;
++}
++
++bool gfx_sdl_uses_metal(void) { return metal_view != NULL; }
++#endif
++
+ static bool gfx_sdl_has_focus(void) {
+     return (SDL_GetWindowFlags(wnd) & SDL_WINDOW_INPUT_FOCUS);
+ }
+diff --git a/src/pc/gfx/gfx_sdl.h b/src/pc/gfx/gfx_sdl.h
+index 35e00d798db53997dc7484a48a5fbfb8c4591b37..91d29e09055ae721f39008580fda80f798d2843a 100644
+--- a/src/pc/gfx/gfx_sdl.h
++++ b/src/pc/gfx/gfx_sdl.h
+@@ -7,5 +7,9 @@ extern struct GfxWindowManagerAPI gfx_sdl;
+ 
+ bool gfx_sdl_check_opengl_compatibility(void);
+ bool gfx_sdl_queue_file_import(const char *path);
++#ifdef TARGET_IOS
++void *gfx_sdl_get_metal_layer(void);
++bool gfx_sdl_uses_metal(void);
++#endif
+ 
+ #endif
+diff --git a/src/pc/pc_main.c b/src/pc/pc_main.c
+index 3170fcce6402c21a322dad03f96ff30927767867..a5de59be0f8117d76635ecd0e5881362a6f0b987 100644
+--- a/src/pc/pc_main.c
++++ b/src/pc/pc_main.c
+@@ -19,6 +19,9 @@
+ #include "rom_assets.h"
+ #include "rom_checker.h"
+ #include "pc_main.h"
++#ifdef TARGET_IOS
++#include "gfx/gfx_metal_coopdx.h"
++#endif
+ #include "loading.h"
+ #include "cliopts.h"
+ #include "configfile.h"
+@@ -254,6 +257,13 @@ static void select_graphics_backend(void) {
+             gRenderApi = &gfx_opengl_api;
+             gAudioApi  = &audio_sdl;
+             break;
++#ifdef TARGET_IOS
++        case GAPI_METAL:
++            gWindowApi = &gfx_sdl;
++            gRenderApi = &gfx_metal_coopdx_api;
++            gAudioApi  = &audio_sdl;
++            break;
++#endif
+ #if defined(_WIN32)
+         case GAPI_D3D11:
+             gWindowApi = &gfx_dxgi;
+-- 
+2.56.1
+

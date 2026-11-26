@@ -1,0 +1,205 @@
+From e2f34a459ad2e991a8303ade3871aee196b06eae Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 16:23:33 -0600
+Subject: [PATCH 03/13] Install root-layout Lua ZIPs as named mods
+
+
+diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md
+index 927cb95c4dda7b43b5d6909689ec8d7d6d5c73a2..7e6a1725288b293d60ce68713ecf0e02191b7476 100644
+--- a/MISSION_01_PROGRESS.md
++++ b/MISSION_01_PROGRESS.md
+@@ -6,7 +6,7 @@
+ - Branch: `mission-01-coopdx-foundation`
+ - Upstream remote: `https://github.com/LeoManrique/sm64coopdx-ios.git`
+ - Source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad` (upstream `main`)
+-- Latest local implementation checkpoint: `2def50bc` (iOS ZIP import UI and initial safeguards); current preflight-test changes are being validated before a second checkpoint.
++- Recent local implementation checkpoints: `2def50bc` (iOS ZIP picker and initial safeguards), followed by preflight and root-layout compatibility changes.
+ - Original Metal and Mission 82 worktrees were inspected and left untouched.
+ - No renderer source has been changed in this checkout.
+ 
+@@ -20,7 +20,7 @@
+ | `./build_ios.sh generate` | Blocked before generation: `xcrun`/Xcode command line tools are unavailable in this Linux environment |
+ | Linux rebuild after iOS import and ZIP hardening changes | Passed; `build/us_pc/sm64coopdx` linked |
+ | ZIP path test | Passed with GCC and Clang ASan/UBSan |
+-| Production ZIP preflight fixture test | Passed on valid Lua/DynOS archives and an archive with traversal after its Lua entry; sanitizer run passed |
++| Production ZIP preflight fixture test | Passed on nested/mixed Lua-DynOS archives, root-level Lua layout, late traversal rejection, invalid destination naming, and entry-count limit; sanitizer run passed |
+ | Unsigned iOS app / IPA / iPhone run | Not produced or verified |
+ 
+ The `build_ios.sh` flow requires macOS/Xcode, CMake and `xcrun`; its full `all` path also builds desktop assets before generating/building the Xcode iOS target and packaging the unsigned IPA. The checkout includes no iOS build workflow in `.github/workflows`; the existing workflow is for desktop builds.
+@@ -32,9 +32,9 @@ The `build_ios.sh` flow requires macOS/Xcode, CMake and `xcrun`; its full `all`
+ - The iOS project is the CoopDX source tree, rather than a separate Lua or DynOS implementation. It enables `DYNOS`, `COOP`, `COOPNET`, `HANDHELD`, and `TOUCH_CONTROLS`; ships its own Lua 5.3 iOS static library; and contains CoopDX's game, Lua, mod, DynOS, and network systems.
+ - iOS uses SDL2 plus a UIKit bridge. The current iOS CMake configuration selects `RAPI_GL=1`, builds vendored SDL2 with iOS patches, and links OpenGLES, UIKit, GameController, CoreMotion, and audio frameworks. The default is therefore the upstream OpenGL ES backend.
+ - `sys_user_path()` resolves to the app's Documents directory on iOS. CoopDX's normal filesystem/mod code uses this write root; mods and DynOS packs remain under the existing `mods` and `dynos` layouts and are rediscovered by the normal mod/DynOS managers.
+-- `platform_ios.m` has a `UIDocumentPicker` path for importing a ROM. The Mods panel exposes the app's Mods folder in Files, and `gfx_sdl.c` routes SDL `DROPFILE` events through `mod_import_file()`. This branch adds an **Import Mod ZIP** action using `UIDocumentPicker`; the selected file is copied to a unique temporary path and queued through SDL so existing import and DynOS refresh logic runs on the game event thread.
++- `platform_ios.m` has a `UIDocumentPicker` path for importing a ROM. The Mods panel exposes the app's Mods folder in Files, and `gfx_sdl.c` routes SDL `DROPFILE` events through `mod_import_file()`. This branch adds an **Import Mod ZIP** action using `UIDocumentPicker`; the selected security-scoped file is copied into a unique temporary directory while preserving its original filename and queued through SDL so existing import and DynOS refresh logic runs on the game event thread. The temporary archive and directory are removed after the import.
+ - The production ZIP importer detects Lua/DynOS content, then extracts into existing Mods or DynOS directories; normal refresh/load code handles activation and persistence. It is not a new package/runtime format. ZIP preflight rejects unsafe paths, more than 16,384 entries, entries above 128 MiB, or total uncompressed contents above 512 MiB. Extraction streams to disk instead of allocating whole files. The scan validates every archive member even after it finds a Lua script.
+-- Added a preflight module called by the production importer and host fixtures built using the bundled miniz ZIP writer. It verifies Lua/DynOS detection, nested script folder extraction metadata, mixed-asset classification, and rejection of a traversal entry after the first Lua file. This does not yet exercise actual installation/extraction, mod startup, or rollback; extraction can leave partial files if a later member fails. UIKit and the complete import workflow are not Apple-compiled or device-tested because this environment has no Xcode.
++- Added a preflight module called by the production importer and host fixtures built using the bundled miniz ZIP writer. It verifies Lua/DynOS detection, nested script folder metadata, mixed-asset classification, root-level Lua package folder naming, rejection of a traversal entry after the first Lua file, invalid destination naming, and entry-count limits. This does not yet exercise actual installation/extraction, mod startup, or rollback; extraction can leave partial files if a later member fails. UIKit and the complete import workflow are not Apple-compiled or device-tested because this environment has no Xcode.
+ - Bundled example fixtures cover useful acceptance cases: `low-gravity.lua`, behavior replacement/addition and spawned objects, nested custom-animation examples for Lua and DynOS, custom HUD textures, texture overrides, custom levels, and a custom actor/collision model. These are candidate end-to-end checks; no runtime mod test has yet been claimed.
+ - Import hardening is a prerequisite for treating arbitrary downloaded ZIPs as safe. Extraction still writes directly into installed folders and can leave partial files if a later entry fails; add an importer-level fixture test and consider rollback before treating untrusted ZIP installation as robust.
+ 
+@@ -67,7 +67,7 @@ The iOS repository is presented on GitHub as a fork of `coop-deluxe/sm64coopdx`,
+ 
+ ## Next steps
+ 
+-1. Extend the importer fixture harness through actual disk extraction into a temporary app-data root, including malformed/truncated archive recovery and repeated import behavior.
++1. Extend the importer fixture harness through actual disk extraction into a temporary app-data root, including malformed/truncated archive recovery and repeated import behavior. Root-level Lua packages now get a stable install folder derived from the original ZIP filename.
+ 2. Run bundled Lua and DynOS example mods through the upstream runtime and record observed behavior rather than inferring compatibility from fixture presence.
+ 3. Establish iOS arm64 compile/IPA automation on an authorized macOS runner using a private ROM/asset input path; verify the UIKit picker on device.
+ 4. Resolve upstream source reuse/distribution terms before copying backend code; then design the `ColorCombiner`→Metal semantic adapter and verify vanilla parity with OpenGL ES.
+diff --git a/src/pc/gfx/gfx_sdl.c b/src/pc/gfx/gfx_sdl.c
+index 008ba3ee33889371176095993105706884c1d2b3..d5c99e07ad12aac00be04e26c9b23017bf7501d1 100644
+--- a/src/pc/gfx/gfx_sdl.c
++++ b/src/pc/gfx/gfx_sdl.c
+@@ -375,6 +375,21 @@ static void gfx_sdl_handle_events(void) {
+             if (path) {
+                 gfx_sdl_ondropfile(path);
+                 remove(path);
++                const char *temp_prefix = "sm64coopdx-import-";
++                size_t path_len = SDL_strlen(path);
++                if (path_len < SYS_MAX_PATH) {
++                    char parent[SYS_MAX_PATH];
++                    SDL_strlcpy(parent, path, sizeof(parent));
++                    char *separator = SDL_strrchr(parent, '/');
++                    if (separator) {
++                        *separator = '\0';
++                        char *folder_name = SDL_strrchr(parent, '/');
++                        folder_name = folder_name ? folder_name + 1 : parent;
++                        if (SDL_strncmp(folder_name, temp_prefix, SDL_strlen(temp_prefix)) == 0) {
++                            rmdir(parent);
++                        }
++                    }
++                }
+                 SDL_free(path);
+             }
+             continue;
+diff --git a/src/pc/mods/mod_import.c b/src/pc/mods/mod_import.c
+index 51f786d10773b2ee72dfab837c4a403bd55b064e..adf93f5756225b48b95c7872d50f25f71ab0bb23 100644
+--- a/src/pc/mods/mod_import.c
++++ b/src/pc/mods/mod_import.c
+@@ -124,7 +124,12 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+     }
+     *isLua = preflight.is_lua;
+     *isDynos = preflight.is_dynos;
+-    snprintf(luaPath, sizeof(luaPath), "%s", preflight.lua_path);
++    if (preflight.is_lua &&
++        !mod_import_zip_resolve_lua_folder(&preflight, path, luaPath, sizeof(luaPath))) {
++        LOG_ERROR("Could not determine a safe Mods folder for the ZIP archive");
++        mz_zip_reader_end(&zip_archive);
++        return false;
++    }
+     mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
+ 
+     // Figure out dst directory
+diff --git a/src/pc/mods/mod_import_zip_preflight.c b/src/pc/mods/mod_import_zip_preflight.c
+index 69423ed91cc0d472c526f47c276384b545ef670b..21b0b3fde5a7ddce82580d63a72df7caacb90dcc 100644
+--- a/src/pc/mods/mod_import_zip_preflight.c
++++ b/src/pc/mods/mod_import_zip_preflight.c
+@@ -59,3 +59,27 @@ struct ModImportZipPreflight mod_import_zip_preflight(mz_zip_archive *archive) {
+     }
+     return result;
+ }
++
++bool mod_import_zip_resolve_lua_folder(const struct ModImportZipPreflight *preflight,
++                                       const char *zip_path, char *out, size_t out_size) {
++    if (!preflight || preflight->error != MOD_IMPORT_ZIP_PREFLIGHT_OK || !preflight->is_lua ||
++        !zip_path || !out || out_size == 0) return false;
++
++    if (preflight->lua_path[0]) {
++        size_t length = strlen(preflight->lua_path);
++        if (length >= out_size) return false;
++        memcpy(out, preflight->lua_path, length + 1);
++        return true;
++    }
++
++    const char *base = strrchr(zip_path, '/');
++    base = base ? base + 1 : zip_path;
++    size_t base_length = strlen(base);
++    if (base_length >= 4 && strcmp(base + base_length - 4, ".zip") == 0) base_length -= 4;
++    if (base_length == 0 || base_length + 2 > out_size) return false;
++
++    memcpy(out, base, base_length);
++    out[base_length] = '/';
++    out[base_length + 1] = '\0';
++    return mod_import_zip_path_is_safe(out);
++}
+diff --git a/src/pc/mods/mod_import_zip_preflight.h b/src/pc/mods/mod_import_zip_preflight.h
+index 29ab1d08ad32e572d02fb2193ebd76a460805b45..e02f09c231ee1739071ab3092f5857ea1b5a2be0 100644
+--- a/src/pc/mods/mod_import_zip_preflight.h
++++ b/src/pc/mods/mod_import_zip_preflight.h
+@@ -28,5 +28,7 @@ struct ModImportZipPreflight {
+ };
+ 
+ struct ModImportZipPreflight mod_import_zip_preflight(mz_zip_archive *archive);
++bool mod_import_zip_resolve_lua_folder(const struct ModImportZipPreflight *preflight,
++                                      const char *zip_path, char *out, size_t out_size);
+ 
+ #endif
+diff --git a/src/pc/platform_ios.m b/src/pc/platform_ios.m
+index f6e0ba92247c1ac7104f74be618e158c10e16e35..83933ad358ea251d6c2484a9cedf7b6b007fc9dc 100644
+--- a/src/pc/platform_ios.m
++++ b/src/pc/platform_ios.m
+@@ -191,13 +191,20 @@ static bool sModPickerActive = false;
+     NSURL *url = urls.firstObject;
+     if (url) {
+         BOOL accessed = [url startAccessingSecurityScopedResource];
+-        NSString *tempName = [NSString stringWithFormat:@"sm64coopdx-import-%@.zip", NSUUID.UUID.UUIDString];
+-        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:tempName];
++        NSString *tempDirectory = [NSTemporaryDirectory() stringByAppendingPathComponent:
++                                   [NSString stringWithFormat:@"sm64coopdx-import-%@", NSUUID.UUID.UUIDString]];
++        NSString *tempPath = [tempDirectory stringByAppendingPathComponent:url.lastPathComponent];
+ 
+         NSError *error = nil;
+-        [[NSFileManager defaultManager] copyItemAtURL:url
+-                                                toURL:[NSURL fileURLWithPath:tempPath]
+-                                                error:&error];
++        [[NSFileManager defaultManager] createDirectoryAtPath:tempDirectory
++                                 withIntermediateDirectories:NO
++                                                  attributes:nil
++                                                       error:&error];
++        if (!error) {
++            [[NSFileManager defaultManager] copyItemAtURL:url
++                                                    toURL:[NSURL fileURLWithPath:tempPath]
++                                                    error:&error];
++        }
+         if (accessed) {
+             [url stopAccessingSecurityScopedResource];
+         }
+@@ -208,7 +215,7 @@ static bool sModPickerActive = false;
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The game could not queue the selected mod for import."}];
+         }
+         if (error) {
+-            [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
++            [[NSFileManager defaultManager] removeItemAtPath:tempDirectory error:nil];
+             NSLog(@"[sm64coopdx] Mod ZIP import could not be queued: %@", error.localizedDescription);
+         }
+     }
+diff --git a/tests/mod_import_zip_preflight_test.c b/tests/mod_import_zip_preflight_test.c
+index 4339846920f960c26eeb58b9f87e09c2aad7ab99..063305fc2bb2022edcd190dc16b959bcc2fef717 100644
+--- a/tests/mod_import_zip_preflight_test.c
++++ b/tests/mod_import_zip_preflight_test.c
+@@ -43,6 +43,21 @@ int main(void) {
+     assert(result.is_lua && result.is_dynos);
+     assert(strcmp(result.lua_path, "Pack/") == 0);
+ 
++    make_path(path, sizeof(path), "root-lua");
++    write_zip_start(&zip, path);
++    assert(mz_zip_writer_add_mem(&zip, "main.lua", "return true", 11, MZ_BEST_SPEED));
++    assert(mz_zip_writer_add_mem(&zip, "lib/helper.lua", "return 1", 8, MZ_BEST_SPEED));
++    write_zip_end(&zip);
++    result = scan(path);
++    assert(result.error == MOD_IMPORT_ZIP_PREFLIGHT_OK);
++    assert(result.is_lua && result.lua_path[0] == '\0');
++    char install_folder[128];
++    assert(mod_import_zip_resolve_lua_folder(&result, "/Downloads/Free Camera.zip",
++                                             install_folder, sizeof(install_folder)));
++    assert(strcmp(install_folder, "Free Camera/") == 0);
++    assert(!mod_import_zip_resolve_lua_folder(&result, "/Downloads/bad\\name.zip",
++                                              install_folder, sizeof(install_folder)));
++
+     make_path(path, sizeof(path), "dynos");
+     write_zip_start(&zip, path);
+     assert(mz_zip_writer_add_mem(&zip, "Characters/Peach/actor.bin", "model", 5, MZ_BEST_SPEED));
+-- 
+2.56.1
+

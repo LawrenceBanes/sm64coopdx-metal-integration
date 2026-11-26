@@ -1,0 +1,539 @@
+From 2def50bc414a0cca103f8eeebbf3e8cc6ea71944 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 16:15:24 -0600
+Subject: [PATCH 01/13] Add iOS mod ZIP import and archive safeguards
+
+
+diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..64b80dd267353878f49606a1b25960f5a4fe6aa4
+--- /dev/null
++++ b/MISSION_01_PROGRESS.md
+@@ -0,0 +1,71 @@
++# Mission 01 — CoopDX Metal Integration
++
++## Checkpoint (2026-11-25)
++
++- Independent project: `/home/larry/Projects/sm64coopdx-metal`
++- Branch: `mission-01-coopdx-foundation`
++- Upstream remote: `https://github.com/LeoManrique/sm64coopdx-ios.git`
++- Source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad` (upstream `main`)
++- Original Metal and Mission 82 worktrees were inspected and left untouched.
++- No renderer source has been changed in this checkout.
++
++## Baseline build
++
++| Validation | Result |
++|---|---|
++| Linux upstream build, `make -j2` | Passed; produced `build/us_pc/sm64coopdx` (x86-64 ELF) and generated game assets |
++| ROM input | Temporary local copy of the existing user ROM, ignored by Git; SHA-1 matched the repository's `sm64.us.sha1`; no ROM or generated game binary was staged |
++| `make test` | Blocked: the target invokes `mupen64plus`, which is not installed (`Error 127`) |
++| `./build_ios.sh generate` | Blocked before generation: `xcrun`/Xcode command line tools are unavailable in this Linux environment |
++| Linux rebuild after iOS import and ZIP hardening changes | Passed; `build/us_pc/sm64coopdx` linked |
++| ZIP path test | Passed with GCC and Clang ASan/UBSan |
++| Unsigned iOS app / IPA / iPhone run | Not produced or verified |
++
++The `build_ios.sh` flow requires macOS/Xcode, CMake and `xcrun`; its full `all` path also builds desktop assets before generating/building the Xcode iOS target and packaging the unsigned IPA. The checkout includes no iOS build workflow in `.github/workflows`; the existing workflow is for desktop builds.
++
++## Upstream architecture audit
++
++### Foundation and mod systems
++
++- The iOS project is the CoopDX source tree, rather than a separate Lua or DynOS implementation. It enables `DYNOS`, `COOP`, `COOPNET`, `HANDHELD`, and `TOUCH_CONTROLS`; ships its own Lua 5.3 iOS static library; and contains CoopDX's game, Lua, mod, DynOS, and network systems.
++- iOS uses SDL2 plus a UIKit bridge. The current iOS CMake configuration selects `RAPI_GL=1`, builds vendored SDL2 with iOS patches, and links OpenGLES, UIKit, GameController, CoreMotion, and audio frameworks. The default is therefore the upstream OpenGL ES backend.
++- `sys_user_path()` resolves to the app's Documents directory on iOS. CoopDX's normal filesystem/mod code uses this write root; mods and DynOS packs remain under the existing `mods` and `dynos` layouts and are rediscovered by the normal mod/DynOS managers.
++- `platform_ios.m` has a `UIDocumentPicker` path for importing a ROM. The Mods panel exposes the app's Mods folder in Files, and `gfx_sdl.c` routes SDL `DROPFILE` events through `mod_import_file()`. This branch adds an **Import Mod ZIP** action using `UIDocumentPicker`; the selected file is copied to a unique temporary path and queued through SDL so existing import and DynOS refresh logic runs on the game event thread.
++- The production ZIP importer detects Lua/DynOS content, then extracts into existing Mods or DynOS directories; normal refresh/load code handles activation and persistence. It is not a new package/runtime format. ZIP preflight rejects unsafe paths, more than 16,384 entries, entries above 128 MiB, or total uncompressed contents above 512 MiB. Extraction streams to disk instead of allocating whole files. The scan validates every archive member even after it finds a Lua script.
++- Added host path-validation tests with GCC and Clang ASan/UBSan. A production importer end-to-end ZIP fixture test and transactional rollback remain outstanding; extraction can leave partial files if a later member fails. UIKit and the complete import workflow are not Apple-compiled or device-tested because this environment has no Xcode.
++- Bundled example fixtures cover useful acceptance cases: `low-gravity.lua`, behavior replacement/addition and spawned objects, nested custom-animation examples for Lua and DynOS, custom HUD textures, texture overrides, custom levels, and a custom actor/collision model. These are candidate end-to-end checks; no runtime mod test has yet been claimed.
++- Import hardening is a prerequisite for treating arbitrary downloaded ZIPs as safe. Extraction still writes directly into installed folders and can leave partial files if a later entry fails; add an importer-level fixture test and consider rollback before treating untrusted ZIP installation as robust.
++
++### Renderer comparison and compatibility matrix
++
++The Metal reference is `LawrenceBanes/sm64ios-metal`, branch `mission-81-shader64-rendergraph`, commit `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. Its backend is an implementation in the existing Fast3D renderer, not an independent gameplay engine. CoopDX and that branch do **not** have a source-compatible rendering abstraction.
++
++| Component | Disposition | Reason / next action |
++|---|---|---|
++| CoopDX gameplay, Lua, mod/DynOS managers, multiplayer, SDL/UIKit lifecycle | Reuse directly as the game foundation | These are the compatibility priority and remain authoritative. |
++| CoopDX display-list interpreter (`gfx_pc.c`) and `GfxRenderingAPI` semantics | Preserve directly | The renderer continues to decode N64 display lists, texture state, geometry modes, and batching before invoking a backend. |
++| Existing Metal device/command-buffer/pipeline and shader-source work | Adapt selectively | Its public backend callbacks and shader key do not match CoopDX's callbacks or combiner semantics; port behind CoopDX's interface after licensing review and parity tests. |
++| Color combiner and shader pipeline | Reimplement/adapt semantically; do not cast/hash-only | CoopDX passes a `ColorCombiner*` to `lookup_shader()` and `create_and_load_new_shader()`. The combiner contains normalized combine-mode data, shader input mappings, shader commands, flags, and a cache hash. The Metal branch accepts `uint32_t shader_id` and separately decodes a packed ID into `CCFeatures`. Cache by a canonical semantic key and translate every supported combiner operation; a truncated value or hash-only equivalence is not correct. |
++| Vertex layout and dynamic geometry | Adapt | Preserve CoopDX's float VBO stream and draw batching. Map its actual attributes, camera/model transforms, and material inputs to Metal buffers without bypassing the interpreter. |
++| Texture conversion/upload/sampler state | Adapt | CoopDX performs N64 texture-format decoding and carries per-tile sampler modes. Retain that frontend contract; implement Metal texture caching/invalidation and wrap/filter state in the backend. |
++| Alpha/depth/blend/fog/decal/viewport/scissor | Adapt and verify per callback | Metal must match each state transition produced by CoopDX's renderer, including UI and DynOS draws. |
++| SDL2/UIKit and presentation | Adapt minimally | Keep upstream SDL2 window/lifecycle/input ownership; attach Metal to the UIKit/SDL view and honor its resize, pause/resume, and drawable lifecycle. |
++| Scene capture, SSAO, bloom, shadows, ray-tracing research | Defer | Only after vanilla Metal parity and mod compatibility. They must remain optional and must not affect the OpenGL ES fallback. |
++| Previous custom gameplay/world additions | Discard from this migration | Not needed for CoopDX's authoritative gameplay/mod base and explicitly out of scope. |
++
++### License and provenance
++
++The iOS repository is presented on GitHub as a fork of `coop-deluxe/sm64coopdx`, but the inspected root tree contains no LICENSE/COPYING file. An upstream repository issue also records that the project had no license and was marked Proprietary for a packaging metadata submission. Treat upstream code as the reference implementation until its reuse/distribution terms are resolved; do not copy backend code into this project based only on public visibility. Any eventual contribution strategy must preserve upstream history/attribution and be reviewed against actual rights.
++
++## Preserved working trees
++
++- `/home/larry/Projects/sm64ios-metal` remains on its pre-existing branch and has its pre-existing modified `src/game/skybox.c` untouched.
++- `/home/larry/Projects/sm64ios-mission82` remains on `mission-82-coopdx-native` at `854f63fd3c8e66a4f4107813551e239439696270`, including its prior uncommitted files untouched.
++- Mission 81 remains isolated; no changes from it were copied into the CoopDX checkout.
++
++## Next steps
++
++1. Add a production-importer fixture test using a synthetic ZIP, covering nested Lua modules, DynOS detection, traversal rejection and size bounds; improve rollback/partial-install behavior.
++2. Run bundled Lua and DynOS example mods through the upstream runtime and record observed behavior rather than inferring compatibility from fixture presence.
++3. Establish iOS arm64 compile/IPA automation on an authorized macOS runner using a private ROM/asset input path; verify the UIKit picker on device.
++4. Resolve upstream source reuse/distribution terms before copying backend code; then design the `ColorCombiner`→Metal semantic adapter and verify vanilla parity with OpenGL ES.
+diff --git a/lang/English.ini b/lang/English.ini
+index 7a9059d7685270a2124e2cfca94e9882a39d3f97..2f775737199bc4cd078147db952cc2f851fba7ad 100644
+--- a/lang/English.ini
++++ b/lang/English.ini
+@@ -223,6 +223,7 @@ WARNING = "\\#ffffa0\\Warning:\\#dcdcdc\\ You have 10 or more mods enabled, plea
+ NO_MODS_FOUND = "No mods were found."
+ BROWSE_MODS = "Browse Mod Site"
+ OPEN_MOD_FOLDER = "Open Mods Folder"
++IMPORT_MOD_FILE = "Import Mod ZIP"
+ 
+ [HOST_MOD_CATEGORIES]
+ ALL = "All"
+diff --git a/src/pc/djui/djui_panel_host_mods.c b/src/pc/djui/djui_panel_host_mods.c
+index 508f15ac914a4ce85bab533989409b422274d8ca..f9dd3de08c2e9a77dc02c7de9345a7eaaa10c21b 100644
+--- a/src/pc/djui/djui_panel_host_mods.c
++++ b/src/pc/djui/djui_panel_host_mods.c
+@@ -6,6 +6,7 @@
+ #include "pc/network/network.h"
+ #include "pc/utils/misc.h"
+ #include "pc/configfile.h"
++#include "pc/platform.h"
+ #include "pc/mods/mods.h"
+ #include "pc/mods/mods_utils.h"
+ #include "djui_panel_main.h"
+@@ -232,6 +233,12 @@ static void djui_mod_folder_open(UNUSED struct DjuiBase* caller) {
+     open_folder(fs_get_write_path("/mods"));
+ }
+ 
++#ifdef TARGET_IOS
++static void djui_mod_import_from_files(UNUSED struct DjuiBase* caller) {
++    platform_ios_open_mod_picker();
++}
++#endif
++
+ void djui_panel_host_mods_create(struct DjuiBase* caller) {
+ 
+     mods_update_selectable();
+@@ -270,6 +277,10 @@ void djui_panel_host_mods_create(struct DjuiBase* caller) {
+                 struct DjuiButton* button2 = djui_button_right_create(&rect2->base, DLANG(HOST_MODS, OPEN_MOD_FOLDER), DJUI_BUTTON_STYLE_NORMAL, djui_mod_folder_open);
+                 djui_base_set_size(&button1->base, 0.485f, 45);
+                 djui_base_set_size(&button2->base, 0.485f, 45);
++#ifdef TARGET_IOS
++                struct DjuiButton* importButton = djui_button_create(body, DLANG(HOST_MODS, IMPORT_MOD_FILE), DJUI_BUTTON_STYLE_NORMAL, djui_mod_import_from_files);
++                djui_base_set_size(&importButton->base, 1.0f, 45);
++#endif
+             }
+         } else {
+             djui_button_create(body, DLANG(MENU, BACK), DJUI_BUTTON_STYLE_BACK, djui_panel_menu_back);
+diff --git a/src/pc/gfx/gfx_sdl.c b/src/pc/gfx/gfx_sdl.c
+index badfd6bd870bf8bb66e66168b578cff0adde1c04..008ba3ee33889371176095993105706884c1d2b3 100644
+--- a/src/pc/gfx/gfx_sdl.c
++++ b/src/pc/gfx/gfx_sdl.c
+@@ -66,6 +66,7 @@ static SDL_Window *wnd;
+ static SDL_GLContext ctx = NULL;
+ static bool sHidpiSupported = false;
+ static bool sHidpiActive = false;
++static Uint32 sFileImportEvent = (Uint32)-1;
+ 
+ static kb_callback_t kb_key_down = NULL;
+ static kb_callback_t kb_key_up = NULL;
+@@ -135,6 +136,7 @@ static void gfx_sdl_init(const char *window_title) {
+     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+ #endif
+     SDL_Init(SDL_INIT_VIDEO);
++    sFileImportEvent = SDL_RegisterEvents(1);
+ #ifdef TARGET_IOS
+     platform_ios_init_keyboard_observer();
+ #endif
+@@ -307,6 +309,25 @@ static void gfx_sdl_ondropfile(char* path) {
+ #endif
+ }
+ 
++/* UIKit presents the Files picker on the main queue. Queue the selected path
++ * back to SDL so mod/DynOS refreshes run on the game's event thread. */
++bool gfx_sdl_queue_file_import(const char *path) {
++    if (!path || !path[0] || sFileImportEvent == (Uint32)-1) return false;
++
++    char *path_copy = SDL_strdup(path);
++    if (!path_copy) return false;
++
++    SDL_Event event = { 0 };
++    event.type = sFileImportEvent;
++    event.user.type = sFileImportEvent;
++    event.user.data1 = path_copy;
++    if (SDL_PushEvent(&event) != 1) {
++        SDL_free(path_copy);
++        return false;
++    }
++    return true;
++}
++
+ #ifdef TOUCH_CONTROLS
+ static void gfx_sdl_fingerdown(SDL_TouchFingerEvent sdl_event) {
+ #ifdef TARGET_IOS
+@@ -349,6 +370,15 @@ static void gfx_sdl_fingerup(SDL_TouchFingerEvent sdl_event) {
+ static void gfx_sdl_handle_events(void) {
+     SDL_Event event;
+     while (SDL_PollEvent(&event)) {
++        if (sFileImportEvent != (Uint32)-1 && event.type == sFileImportEvent) {
++            char *path = (char *)event.user.data1;
++            if (path) {
++                gfx_sdl_ondropfile(path);
++                remove(path);
++                SDL_free(path);
++            }
++            continue;
++        }
+         switch (event.type) {
+             case SDL_TEXTINPUT:
+                 kb_text_input(event.text.text);
+diff --git a/src/pc/gfx/gfx_sdl.h b/src/pc/gfx/gfx_sdl.h
+index 0c9d50f7aed05d35de342336966701b75322a27a..35e00d798db53997dc7484a48a5fbfb8c4591b37 100644
+--- a/src/pc/gfx/gfx_sdl.h
++++ b/src/pc/gfx/gfx_sdl.h
+@@ -6,5 +6,6 @@
+ extern struct GfxWindowManagerAPI gfx_sdl;
+ 
+ bool gfx_sdl_check_opengl_compatibility(void);
++bool gfx_sdl_queue_file_import(const char *path);
+ 
+ #endif
+diff --git a/src/pc/mods/mod_import.c b/src/pc/mods/mod_import.c
+index ad9de35c7b64bacc60ed095ee833820ea39e4e0a..8aa795b7431814bde8104c41767a58d8bdc009b9 100644
+--- a/src/pc/mods/mod_import.c
++++ b/src/pc/mods/mod_import.c
+@@ -6,9 +6,14 @@
+ #include "data/dynos.c.h"
+ #include "pc/djui/djui_language.h"
+ #include "pc/djui/djui_popup.h"
++#include "mod_import_path.h"
+ #include "mods.h"
+ #include "mods_utils.h"
+ 
++#define MOD_IMPORT_MAX_ZIP_ENTRIES 16384u
++#define MOD_IMPORT_MAX_ZIP_FILE_SIZE (128u * 1024u * 1024u)
++#define MOD_IMPORT_MAX_ZIP_TOTAL_SIZE (512u * 1024u * 1024u)
++
+ static bool mod_import_lua(char* src) {
+     char dst[SYS_MAX_PATH] = { 0 };
+     if (!concat_path(dst, (char*)fs_get_write_path(MOD_DIRECTORY), path_basename(src))) {
+@@ -116,7 +121,15 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+     // Figure out if its a dynos pack or a mod
+     *isLua = false;
+     *isDynos = false;
+-    for (int i = 0; i < (int)mz_zip_reader_get_num_files(&zip_archive); i++) {
++    mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
++    if (num_files > MOD_IMPORT_MAX_ZIP_ENTRIES) {
++        LOG_ERROR("Mod ZIP has too many entries (%u > %u)", num_files, MOD_IMPORT_MAX_ZIP_ENTRIES);
++        mz_zip_reader_end(&zip_archive);
++        return false;
++    }
++
++    u64 total_uncompressed_size = 0;
++    for (mz_uint i = 0; i < num_files; i++) {
+         mz_zip_archive_file_stat file_stat;
+         if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+             LOG_ERROR("mz_zip_reader_file_stat() failed!");
+@@ -124,10 +137,23 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+             return false;
+         }
+ 
++        if (!mod_import_zip_path_is_safe(file_stat.m_filename)) {
++            LOG_ERROR("Rejected unsafe path in mod ZIP: '%s'", file_stat.m_filename);
++            mz_zip_reader_end(&zip_archive);
++            return false;
++        }
++
++        if (file_stat.m_uncomp_size > MOD_IMPORT_MAX_ZIP_FILE_SIZE ||
++            total_uncompressed_size > MOD_IMPORT_MAX_ZIP_TOTAL_SIZE - file_stat.m_uncomp_size) {
++            LOG_ERROR("Mod ZIP exceeds supported uncompressed size limits");
++            mz_zip_reader_end(&zip_archive);
++            return false;
++        }
++        total_uncompressed_size += file_stat.m_uncomp_size;
++
+         if (path_ends_with(file_stat.m_filename, ".lua") || path_ends_with(file_stat.m_filename, ".luac")) {
+-            path_get_folder(file_stat.m_filename, luaPath);
++            if (!*isLua) path_get_folder(file_stat.m_filename, luaPath);
+             *isLua = true;
+-            break;
+         } else if (path_ends_with(file_stat.m_filename, ".tex")) {
+             *isDynos = true;
+         } else if (path_ends_with(file_stat.m_filename, ".png")) {
+@@ -177,7 +203,7 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+     }
+ 
+     // Extract the archive
+-    for (int i = 0; i < (int)mz_zip_reader_get_num_files(&zip_archive); i++) {
++    for (mz_uint i = 0; i < num_files; i++) {
+         mz_zip_archive_file_stat file_stat;
+         if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+             LOG_ERROR("mz_zip_reader_file_stat() failed!");
+@@ -185,8 +211,17 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+             return false;
+         }
+ 
++        if (!mod_import_zip_path_is_safe(file_stat.m_filename)) {
++            LOG_ERROR("Rejected unsafe path in mod ZIP: '%s'", file_stat.m_filename);
++            mz_zip_reader_end(&zip_archive);
++            return false;
++        }
++
+         // Build dst path
+-        if (!concat_path(dst, dstDirectory, file_stat.m_filename)) {
++        size_t dst_dir_len = strlen(dstDirectory);
++        size_t member_len = strlen(file_stat.m_filename);
++        if (dst_dir_len + 1 + member_len >= SYS_MAX_PATH - 1 ||
++            !concat_path(dst, dstDirectory, file_stat.m_filename)) {
+             LOG_ERROR("Failed to concat path for zip mod import");
+             mz_zip_reader_end(&zip_archive);
+             return false;
+@@ -209,43 +244,15 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+             continue;
+         }
+ 
+-        // Try to extract all the files to the heap.
+-        size_t uncompSize = 0;
+-        const char* p = mz_zip_reader_extract_file_to_heap(&zip_archive, file_stat.m_filename, &uncompSize, 0);
+-        if (!p) {
+-            LOG_ERROR("mz_zip_reader_extract_file_to_heap() failed!");
+-            mz_zip_reader_end(&zip_archive);
+-            return false;
+-        }
+-
+-        // Make sure the extraction really succeeded.
+-        if (uncompSize != file_stat.m_uncomp_size) {
+-            LOG_ERROR("mz_zip_reader_extract_file_to_heap() failed to extract the proper data");
+-            mz_free((void*)p);
++        // Stream to disk instead of allocating each uncompressed file in RAM.
++        if (!mz_zip_reader_extract_to_file(&zip_archive, i, dst, 0)) {
++            LOG_ERROR("Failed to extract ZIP entry '%s': %s", file_stat.m_filename,
++                      mz_zip_get_error_string(mz_zip_get_last_error(&zip_archive)));
+             mz_zip_reader_end(&zip_archive);
+             return false;
+         }
+ 
+-        // Write the data
+-        FILE* fout = fopen(dst, "wb");
+-        if (fout == NULL) {
+-            LOG_ERROR("Failed to open dst path for zip mod import");
+-            mz_free((void*)p);
+-            mz_zip_reader_end(&zip_archive);
+-            return false;
+-        }
+-
+-        size_t wbytes = fwrite(p, 1, uncompSize, fout);
+-        fclose(fout);
+-
+-        if (wbytes != uncompSize) {
+-            LOG_ERROR("Write error on zip mod import: %u != %u", (u32)wbytes, (u32)uncompSize);
+-        }
+-
+-        LOG_INFO("Successfully extracted file \"%s\", size %u", file_stat.m_filename, (u32)uncompSize);
+-
+-        // We're done.
+-        mz_free((void*)p);
++        LOG_INFO("Successfully extracted file \"%s\", size %u", file_stat.m_filename, (u32)file_stat.m_uncomp_size);
+     }
+     // Close the archive, freeing any resources it was using
+     mz_zip_reader_end(&zip_archive);
+@@ -295,4 +302,4 @@ bool mod_import_file(char* path) {
+     }
+ 
+     return ret;
+-}
+\ No newline at end of file
++}
+diff --git a/src/pc/mods/mod_import_path.h b/src/pc/mods/mod_import_path.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..51ecb7e02ea54c2ff4bb27f87df50d4758e2004d
+--- /dev/null
++++ b/src/pc/mods/mod_import_path.h
+@@ -0,0 +1,37 @@
++#ifndef MOD_IMPORT_PATH_H
++#define MOD_IMPORT_PATH_H
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <string.h>
++
++#define MOD_IMPORT_MAX_ZIP_PATH 4095
++
++/* ZIP names must be relative slash-separated paths. A leading "./" is kept
++ * compatible with common ZIP tools; parent traversal and platform-specific
++ * separators are rejected before the name is joined to an install root. */
++static inline bool mod_import_zip_path_is_safe(const char *path) {
++    if (!path || !path[0] || path[0] == '/' || path[0] == '\\') return false;
++
++    size_t length = 0;
++    while (length <= MOD_IMPORT_MAX_ZIP_PATH && path[length]) ++length;
++    if (length == 0 || length > MOD_IMPORT_MAX_ZIP_PATH) return false;
++
++    size_t component_start = 0;
++    for (size_t i = 0; i <= length; ++i) {
++        unsigned char ch = (unsigned char)path[i];
++        if (ch == '\\' || ch == ':' || (ch != '\0' && (ch < 0x20 || ch == 0x7f))) return false;
++
++        if (ch == '/' || ch == '\0') {
++            size_t component_length = i - component_start;
++            if (component_length == 0) return false;
++            if (component_length == 2 && path[component_start] == '.' && path[component_start + 1] == '.') return false;
++            component_start = i + 1;
++            if (ch == '/' && i + 1 == length) return true;
++        }
++    }
++
++    return true;
++}
++
++#endif
+diff --git a/src/pc/platform.h b/src/pc/platform.h
+index 6b0081746af727e3704e4d8ba503fc8f1f361449..21390557cba9e4a38cc553f66c66eeab102f14c3 100644
+--- a/src/pc/platform.h
++++ b/src/pc/platform.h
+@@ -38,6 +38,7 @@ void sys_swap_backslashes(char* buffer);
+ #ifdef TARGET_IOS
+ unsigned int platform_ios_get_refresh_rate(void);
+ void platform_ios_open_rom_picker(void);
++void platform_ios_open_mod_picker(void);
+ bool platform_ios_is_picker_active(void);
+ const char *platform_ios_get_user_path(void);
+ void platform_ios_open_folder(const char *path);
+diff --git a/src/pc/platform_ios.m b/src/pc/platform_ios.m
+index 535c7c5f37929814d93dcb23ecabd3063595178c..f6e0ba92247c1ac7104f74be618e158c10e16e35 100644
+--- a/src/pc/platform_ios.m
++++ b/src/pc/platform_ios.m
+@@ -4,6 +4,7 @@
+ #import <Foundation/Foundation.h>
+ 
+ #include "platform.h"
++#include "pc/gfx/gfx_sdl.h"
+ #include "rom_checker.h"
+ 
+ // ---- iOS software keyboard height tracking ----
+@@ -177,4 +178,73 @@ bool platform_ios_is_picker_active(void) {
+     return sPickerActive;
+ }
+ 
++// ---- Mod ZIP picker ----
++
++static bool sModPickerActive = false;
++
++@interface SM64ModPickerDelegate : NSObject <UIDocumentPickerDelegate>
++@end
++
++@implementation SM64ModPickerDelegate
++
++- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
++    NSURL *url = urls.firstObject;
++    if (url) {
++        BOOL accessed = [url startAccessingSecurityScopedResource];
++        NSString *tempName = [NSString stringWithFormat:@"sm64coopdx-import-%@.zip", NSUUID.UUID.UUIDString];
++        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:tempName];
++
++        NSError *error = nil;
++        [[NSFileManager defaultManager] copyItemAtURL:url
++                                                toURL:[NSURL fileURLWithPath:tempPath]
++                                                error:&error];
++        if (accessed) {
++            [url stopAccessingSecurityScopedResource];
++        }
++
++        if (!error && !gfx_sdl_queue_file_import(tempPath.fileSystemRepresentation)) {
++            error = [NSError errorWithDomain:@"com.sm64coopdx.ios"
++                                        code:1
++                                    userInfo:@{NSLocalizedDescriptionKey: @"The game could not queue the selected mod for import."}];
++        }
++        if (error) {
++            [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
++            NSLog(@"[sm64coopdx] Mod ZIP import could not be queued: %@", error.localizedDescription);
++        }
++    }
++    sModPickerActive = false;
++}
++
++- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
++    sModPickerActive = false;
++}
++
++@end
++
++static SM64ModPickerDelegate *sModPickerDelegate = nil;
++
++void platform_ios_open_mod_picker(void) {
++    if (sModPickerActive) return;
++    sModPickerActive = true;
++
++    if (!sModPickerDelegate) {
++        sModPickerDelegate = [[SM64ModPickerDelegate alloc] init];
++    }
++
++    dispatch_async(dispatch_get_main_queue(), ^{
++        UIDocumentPickerViewController *picker =
++            [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"com.pkware.zip-archive"]
++                                                                  inMode:UIDocumentPickerModeImport];
++        picker.delegate = sModPickerDelegate;
++        picker.allowsMultipleSelection = NO;
++
++        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
++        if (rootVC) {
++            [rootVC presentViewController:picker animated:YES completion:nil];
++        } else {
++            sModPickerActive = false;
++        }
++    });
++}
++
+ #endif
+diff --git a/tests/mod_import_path_test.c b/tests/mod_import_path_test.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5629045c25fbc4393d79591801bf3e545fdb366
+--- /dev/null
++++ b/tests/mod_import_path_test.c
+@@ -0,0 +1,39 @@
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "pc/mods/mod_import_path.h"
++
++static void expect_safe(const char *path, bool expected) {
++    bool actual = mod_import_zip_path_is_safe(path);
++    if (actual != expected) {
++        fprintf(stderr, "path safety mismatch for '%s': got %d, expected %d\n",
++                path ? path : "(null)", actual, expected);
++        assert(actual == expected);
++    }
++}
++
++int main(void) {
++    expect_safe("main.lua", true);
++    expect_safe("folder/main.lua", true);
++    expect_safe("./mod/main.lua", true);
++    expect_safe("actors/", true);
++    expect_safe("", false);
++    expect_safe(NULL, false);
++    expect_safe("/absolute/file.lua", false);
++    expect_safe("\\absolute\\file.lua", false);
++    expect_safe("../escape.lua", false);
++    expect_safe("mod/../../escape.lua", false);
++    expect_safe("mod\\main.lua", false);
++    expect_safe("C:/escape.lua", false);
++    expect_safe("mod//main.lua", false);
++    expect_safe("bad\nname.lua", false);
++
++    char too_long[MOD_IMPORT_MAX_ZIP_PATH + 2];
++    memset(too_long, 'a', sizeof(too_long) - 1);
++    too_long[sizeof(too_long) - 1] = '\0';
++    expect_safe(too_long, false);
++
++    puts("mod import path validation: passed");
++    return 0;
++}
+-- 
+2.56.1
+

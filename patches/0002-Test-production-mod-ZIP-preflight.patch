@@ -1,0 +1,313 @@
+From 28d33a062191fc3b073d1d9d71918a6069973a32 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 16:20:10 -0600
+Subject: [PATCH 02/13] Test production mod ZIP preflight
+
+
+diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md
+index 64b80dd267353878f49606a1b25960f5a4fe6aa4..927cb95c4dda7b43b5d6909689ec8d7d6d5c73a2 100644
+--- a/MISSION_01_PROGRESS.md
++++ b/MISSION_01_PROGRESS.md
+@@ -6,6 +6,7 @@
+ - Branch: `mission-01-coopdx-foundation`
+ - Upstream remote: `https://github.com/LeoManrique/sm64coopdx-ios.git`
+ - Source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad` (upstream `main`)
++- Latest local implementation checkpoint: `2def50bc` (iOS ZIP import UI and initial safeguards); current preflight-test changes are being validated before a second checkpoint.
+ - Original Metal and Mission 82 worktrees were inspected and left untouched.
+ - No renderer source has been changed in this checkout.
+ 
+@@ -19,6 +20,7 @@
+ | `./build_ios.sh generate` | Blocked before generation: `xcrun`/Xcode command line tools are unavailable in this Linux environment |
+ | Linux rebuild after iOS import and ZIP hardening changes | Passed; `build/us_pc/sm64coopdx` linked |
+ | ZIP path test | Passed with GCC and Clang ASan/UBSan |
++| Production ZIP preflight fixture test | Passed on valid Lua/DynOS archives and an archive with traversal after its Lua entry; sanitizer run passed |
+ | Unsigned iOS app / IPA / iPhone run | Not produced or verified |
+ 
+ The `build_ios.sh` flow requires macOS/Xcode, CMake and `xcrun`; its full `all` path also builds desktop assets before generating/building the Xcode iOS target and packaging the unsigned IPA. The checkout includes no iOS build workflow in `.github/workflows`; the existing workflow is for desktop builds.
+@@ -32,7 +34,7 @@ The `build_ios.sh` flow requires macOS/Xcode, CMake and `xcrun`; its full `all`
+ - `sys_user_path()` resolves to the app's Documents directory on iOS. CoopDX's normal filesystem/mod code uses this write root; mods and DynOS packs remain under the existing `mods` and `dynos` layouts and are rediscovered by the normal mod/DynOS managers.
+ - `platform_ios.m` has a `UIDocumentPicker` path for importing a ROM. The Mods panel exposes the app's Mods folder in Files, and `gfx_sdl.c` routes SDL `DROPFILE` events through `mod_import_file()`. This branch adds an **Import Mod ZIP** action using `UIDocumentPicker`; the selected file is copied to a unique temporary path and queued through SDL so existing import and DynOS refresh logic runs on the game event thread.
+ - The production ZIP importer detects Lua/DynOS content, then extracts into existing Mods or DynOS directories; normal refresh/load code handles activation and persistence. It is not a new package/runtime format. ZIP preflight rejects unsafe paths, more than 16,384 entries, entries above 128 MiB, or total uncompressed contents above 512 MiB. Extraction streams to disk instead of allocating whole files. The scan validates every archive member even after it finds a Lua script.
+-- Added host path-validation tests with GCC and Clang ASan/UBSan. A production importer end-to-end ZIP fixture test and transactional rollback remain outstanding; extraction can leave partial files if a later member fails. UIKit and the complete import workflow are not Apple-compiled or device-tested because this environment has no Xcode.
++- Added a preflight module called by the production importer and host fixtures built using the bundled miniz ZIP writer. It verifies Lua/DynOS detection, nested script folder extraction metadata, mixed-asset classification, and rejection of a traversal entry after the first Lua file. This does not yet exercise actual installation/extraction, mod startup, or rollback; extraction can leave partial files if a later member fails. UIKit and the complete import workflow are not Apple-compiled or device-tested because this environment has no Xcode.
+ - Bundled example fixtures cover useful acceptance cases: `low-gravity.lua`, behavior replacement/addition and spawned objects, nested custom-animation examples for Lua and DynOS, custom HUD textures, texture overrides, custom levels, and a custom actor/collision model. These are candidate end-to-end checks; no runtime mod test has yet been claimed.
+ - Import hardening is a prerequisite for treating arbitrary downloaded ZIPs as safe. Extraction still writes directly into installed folders and can leave partial files if a later entry fails; add an importer-level fixture test and consider rollback before treating untrusted ZIP installation as robust.
+ 
+@@ -65,7 +67,7 @@ The iOS repository is presented on GitHub as a fork of `coop-deluxe/sm64coopdx`,
+ 
+ ## Next steps
+ 
+-1. Add a production-importer fixture test using a synthetic ZIP, covering nested Lua modules, DynOS detection, traversal rejection and size bounds; improve rollback/partial-install behavior.
++1. Extend the importer fixture harness through actual disk extraction into a temporary app-data root, including malformed/truncated archive recovery and repeated import behavior.
+ 2. Run bundled Lua and DynOS example mods through the upstream runtime and record observed behavior rather than inferring compatibility from fixture presence.
+ 3. Establish iOS arm64 compile/IPA automation on an authorized macOS runner using a private ROM/asset input path; verify the UIKit picker on device.
+ 4. Resolve upstream source reuse/distribution terms before copying backend code; then design the `ColorCombiner`→Metal semantic adapter and verify vanilla parity with OpenGL ES.
+diff --git a/src/pc/mods/mod_import.c b/src/pc/mods/mod_import.c
+index 8aa795b7431814bde8104c41767a58d8bdc009b9..51f786d10773b2ee72dfab837c4a403bd55b064e 100644
+--- a/src/pc/mods/mod_import.c
++++ b/src/pc/mods/mod_import.c
+@@ -7,13 +7,10 @@
+ #include "pc/djui/djui_language.h"
+ #include "pc/djui/djui_popup.h"
+ #include "mod_import_path.h"
++#include "mod_import_zip_preflight.h"
+ #include "mods.h"
+ #include "mods_utils.h"
+ 
+-#define MOD_IMPORT_MAX_ZIP_ENTRIES 16384u
+-#define MOD_IMPORT_MAX_ZIP_FILE_SIZE (128u * 1024u * 1024u)
+-#define MOD_IMPORT_MAX_ZIP_TOTAL_SIZE (512u * 1024u * 1024u)
+-
+ static bool mod_import_lua(char* src) {
+     char dst[SYS_MAX_PATH] = { 0 };
+     if (!concat_path(dst, (char*)fs_get_write_path(MOD_DIRECTORY), path_basename(src))) {
+@@ -118,50 +115,17 @@ static bool mod_import_zip(char* path, bool* isLua, bool* isDynos) {
+         return false;
+     }
+ 
+-    // Figure out if its a dynos pack or a mod
+-    *isLua = false;
+-    *isDynos = false;
+-    mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
+-    if (num_files > MOD_IMPORT_MAX_ZIP_ENTRIES) {
+-        LOG_ERROR("Mod ZIP has too many entries (%u > %u)", num_files, MOD_IMPORT_MAX_ZIP_ENTRIES);
++    // Validate the complete archive before creating or replacing installed files.
++    struct ModImportZipPreflight preflight = mod_import_zip_preflight(&zip_archive);
++    if (preflight.error != MOD_IMPORT_ZIP_PREFLIGHT_OK) {
++        LOG_ERROR("Rejected mod ZIP during preflight (reason=%u, entry=%u)", preflight.error, preflight.entry_index);
+         mz_zip_reader_end(&zip_archive);
+         return false;
+     }
+-
+-    u64 total_uncompressed_size = 0;
+-    for (mz_uint i = 0; i < num_files; i++) {
+-        mz_zip_archive_file_stat file_stat;
+-        if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+-            LOG_ERROR("mz_zip_reader_file_stat() failed!");
+-            mz_zip_reader_end(&zip_archive);
+-            return false;
+-        }
+-
+-        if (!mod_import_zip_path_is_safe(file_stat.m_filename)) {
+-            LOG_ERROR("Rejected unsafe path in mod ZIP: '%s'", file_stat.m_filename);
+-            mz_zip_reader_end(&zip_archive);
+-            return false;
+-        }
+-
+-        if (file_stat.m_uncomp_size > MOD_IMPORT_MAX_ZIP_FILE_SIZE ||
+-            total_uncompressed_size > MOD_IMPORT_MAX_ZIP_TOTAL_SIZE - file_stat.m_uncomp_size) {
+-            LOG_ERROR("Mod ZIP exceeds supported uncompressed size limits");
+-            mz_zip_reader_end(&zip_archive);
+-            return false;
+-        }
+-        total_uncompressed_size += file_stat.m_uncomp_size;
+-
+-        if (path_ends_with(file_stat.m_filename, ".lua") || path_ends_with(file_stat.m_filename, ".luac")) {
+-            if (!*isLua) path_get_folder(file_stat.m_filename, luaPath);
+-            *isLua = true;
+-        } else if (path_ends_with(file_stat.m_filename, ".tex")) {
+-            *isDynos = true;
+-        } else if (path_ends_with(file_stat.m_filename, ".png")) {
+-            *isDynos = true;
+-        } else if (path_ends_with(file_stat.m_filename, ".bin")) {
+-            *isDynos = true;
+-        }
+-    }
++    *isLua = preflight.is_lua;
++    *isDynos = preflight.is_dynos;
++    snprintf(luaPath, sizeof(luaPath), "%s", preflight.lua_path);
++    mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
+ 
+     // Figure out dst directory
+     char dstDirectory[SYS_MAX_PATH] = { 0 };
+diff --git a/src/pc/mods/mod_import_zip_preflight.c b/src/pc/mods/mod_import_zip_preflight.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..69423ed91cc0d472c526f47c276384b545ef670b
+--- /dev/null
++++ b/src/pc/mods/mod_import_zip_preflight.c
+@@ -0,0 +1,61 @@
++#include <string.h>
++
++#include "mod_import_path.h"
++#include "mod_import_zip_preflight.h"
++
++static bool has_suffix(const char *path, const char *suffix) {
++    size_t path_len = strlen(path);
++    size_t suffix_len = strlen(suffix);
++    return path_len >= suffix_len && strcmp(path + path_len - suffix_len, suffix) == 0;
++}
++
++static bool get_parent_path(const char *path, char *out, size_t out_size) {
++    const char *last_slash = strrchr(path, '/');
++    size_t length = last_slash ? (size_t)(last_slash - path + 1) : 0;
++    if (length >= out_size) return false;
++    memcpy(out, path, length);
++    out[length] = '\0';
++    return true;
++}
++
++struct ModImportZipPreflight mod_import_zip_preflight(mz_zip_archive *archive) {
++    struct ModImportZipPreflight result = { 0 };
++    mz_uint count = mz_zip_reader_get_num_files(archive);
++    if (count > MOD_IMPORT_MAX_ZIP_ENTRIES) {
++        result.error = MOD_IMPORT_ZIP_PREFLIGHT_TOO_MANY_ENTRIES;
++        return result;
++    }
++
++    mz_uint64 total_size = 0;
++    for (mz_uint i = 0; i < count; ++i) {
++        mz_zip_archive_file_stat stat;
++        result.entry_index = i;
++        if (!mz_zip_reader_file_stat(archive, i, &stat)) {
++            result.error = MOD_IMPORT_ZIP_PREFLIGHT_INVALID_ENTRY;
++            return result;
++        }
++        if (!mod_import_zip_path_is_safe(stat.m_filename)) {
++            result.error = MOD_IMPORT_ZIP_PREFLIGHT_UNSAFE_PATH;
++            return result;
++        }
++        if (stat.m_uncomp_size > MOD_IMPORT_MAX_ZIP_FILE_SIZE ||
++            total_size > MOD_IMPORT_MAX_ZIP_TOTAL_SIZE - stat.m_uncomp_size) {
++            result.error = MOD_IMPORT_ZIP_PREFLIGHT_SIZE_LIMIT;
++            return result;
++        }
++        total_size += stat.m_uncomp_size;
++
++        if (has_suffix(stat.m_filename, ".lua") || has_suffix(stat.m_filename, ".luac")) {
++            if (!result.is_lua && !get_parent_path(stat.m_filename, result.lua_path, sizeof(result.lua_path))) {
++                result.error = MOD_IMPORT_ZIP_PREFLIGHT_PATH_TOO_LONG;
++                return result;
++            }
++            result.is_lua = true;
++        } else if (has_suffix(stat.m_filename, ".tex") ||
++                   has_suffix(stat.m_filename, ".png") ||
++                   has_suffix(stat.m_filename, ".bin")) {
++            result.is_dynos = true;
++        }
++    }
++    return result;
++}
+diff --git a/src/pc/mods/mod_import_zip_preflight.h b/src/pc/mods/mod_import_zip_preflight.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..29ab1d08ad32e572d02fb2193ebd76a460805b45
+--- /dev/null
++++ b/src/pc/mods/mod_import_zip_preflight.h
+@@ -0,0 +1,32 @@
++#ifndef MOD_IMPORT_ZIP_PREFLIGHT_H
++#define MOD_IMPORT_ZIP_PREFLIGHT_H
++
++#include <stdbool.h>
++#include <stddef.h>
++
++#include "pc/utils/miniz/miniz.h"
++
++#define MOD_IMPORT_MAX_ZIP_ENTRIES 16384u
++#define MOD_IMPORT_MAX_ZIP_FILE_SIZE (128u * 1024u * 1024u)
++#define MOD_IMPORT_MAX_ZIP_TOTAL_SIZE (512u * 1024u * 1024u)
++
++enum ModImportZipPreflightError {
++    MOD_IMPORT_ZIP_PREFLIGHT_OK,
++    MOD_IMPORT_ZIP_PREFLIGHT_TOO_MANY_ENTRIES,
++    MOD_IMPORT_ZIP_PREFLIGHT_INVALID_ENTRY,
++    MOD_IMPORT_ZIP_PREFLIGHT_UNSAFE_PATH,
++    MOD_IMPORT_ZIP_PREFLIGHT_SIZE_LIMIT,
++    MOD_IMPORT_ZIP_PREFLIGHT_PATH_TOO_LONG,
++};
++
++struct ModImportZipPreflight {
++    enum ModImportZipPreflightError error;
++    mz_uint entry_index;
++    bool is_lua;
++    bool is_dynos;
++    char lua_path[4096];
++};
++
++struct ModImportZipPreflight mod_import_zip_preflight(mz_zip_archive *archive);
++
++#endif
+diff --git a/tests/mod_import_zip_preflight_test.c b/tests/mod_import_zip_preflight_test.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..4339846920f960c26eeb58b9f87e09c2aad7ab99
+--- /dev/null
++++ b/tests/mod_import_zip_preflight_test.c
+@@ -0,0 +1,77 @@
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++
++#include "pc/mods/mod_import_zip_preflight.h"
++
++static void make_path(char *out, size_t size, const char *label) {
++    snprintf(out, size, "/tmp/sm64coopdx-preflight-%ld-%s.zip", (long)getpid(), label);
++}
++
++static void write_zip_start(mz_zip_archive *zip, const char *path) {
++    memset(zip, 0, sizeof(*zip));
++    assert(mz_zip_writer_init_file(zip, path, 0));
++}
++
++static void write_zip_end(mz_zip_archive *zip) {
++    assert(mz_zip_writer_finalize_archive(zip));
++    assert(mz_zip_writer_end(zip));
++}
++
++static struct ModImportZipPreflight scan(const char *path) {
++    mz_zip_archive zip = { 0 };
++    assert(mz_zip_reader_init_file(&zip, path, 0));
++    struct ModImportZipPreflight result = mod_import_zip_preflight(&zip);
++    mz_zip_reader_end(&zip);
++    unlink(path);
++    return result;
++}
++
++int main(void) {
++    char path[256];
++    mz_zip_archive zip;
++
++    make_path(path, sizeof(path), "lua");
++    write_zip_start(&zip, path);
++    assert(mz_zip_writer_add_mem(&zip, "Pack/main.lua", "return true", 11, MZ_BEST_SPEED));
++    assert(mz_zip_writer_add_mem(&zip, "Pack/lib/helper.lua", "return 1", 8, MZ_BEST_SPEED));
++    assert(mz_zip_writer_add_mem(&zip, "Pack/actor.bin", "model", 5, MZ_BEST_SPEED));
++    write_zip_end(&zip);
++    struct ModImportZipPreflight result = scan(path);
++    assert(result.error == MOD_IMPORT_ZIP_PREFLIGHT_OK);
++    assert(result.is_lua && result.is_dynos);
++    assert(strcmp(result.lua_path, "Pack/") == 0);
++
++    make_path(path, sizeof(path), "dynos");
++    write_zip_start(&zip, path);
++    assert(mz_zip_writer_add_mem(&zip, "Characters/Peach/actor.bin", "model", 5, MZ_BEST_SPEED));
++    assert(mz_zip_writer_add_mem(&zip, "Characters/Peach/texture.tex", "texture", 7, MZ_BEST_SPEED));
++    write_zip_end(&zip);
++    result = scan(path);
++    assert(result.error == MOD_IMPORT_ZIP_PREFLIGHT_OK);
++    assert(!result.is_lua && result.is_dynos);
++
++    make_path(path, sizeof(path), "late-traversal");
++    write_zip_start(&zip, path);
++    assert(mz_zip_writer_add_mem(&zip, "Pack/main.lua", "return true", 11, MZ_BEST_SPEED));
++    assert(mz_zip_writer_add_mem(&zip, "../outside.lua", "return false", 12, MZ_BEST_SPEED));
++    write_zip_end(&zip);
++    result = scan(path);
++    assert(result.error == MOD_IMPORT_ZIP_PREFLIGHT_UNSAFE_PATH);
++    assert(result.entry_index == 1);
++
++    make_path(path, sizeof(path), "too-many");
++    write_zip_start(&zip, path);
++    for (mz_uint i = 0; i <= MOD_IMPORT_MAX_ZIP_ENTRIES; ++i) {
++        char name[32];
++        snprintf(name, sizeof(name), "entry-%05u", i);
++        assert(mz_zip_writer_add_mem(&zip, name, "", 0, MZ_BEST_SPEED));
++    }
++    write_zip_end(&zip);
++    result = scan(path);
++    assert(result.error == MOD_IMPORT_ZIP_PREFLIGHT_TOO_MANY_ENTRIES);
++
++    puts("production ZIP preflight tests: passed");
++    return 0;
++}
+-- 
+2.56.1
+

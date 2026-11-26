@@ -1,0 +1,43 @@
+From 1652a74aedab1a38e2966e5e8acd0b67d19ba7ca Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:37:44 -0600
+Subject: [PATCH 07/13] Record Metal backend validation limits
+
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 65b78465895d8cd387d0c10864729a04b42853a5..fbd9398cfefbd96dd7e5bcc146da17f3b34f387f 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -11,4 +11,4 @@ Mission 02 has a tested semantic combiner-to-MSL generator (`src/pc/gfx/gfx_meta
+ 
+ The upstream iOS and Metal renderer roots have no project-level license grant identified. No renderer code has been copied. The local Metal reference remote's SSH fetch failed due a system SSH config permission error; HTTPS confirms its remote `mission-81-shader64-rendergraph` at `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. The existing local Metal worktree is on `mission-55-6-codemagic` with a pre-existing modified `src/game/skybox.c`; the Mission 81 worktree has pre-existing untracked `--repo`; Mission 82 has pre-existing gameplay/runtime modifications. All were left untouched.
+ 
+-Current commit: `36fd9adb` (combiner adapter); backend and SDL integration are uncommitted at handoff. The next step is to review/fix the Objective-C backend and its color/texture semantics, then validate with the proper pinned SDL2 dependency on a macOS/Xcode runner. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
++Current commit: `9d32baa8` (initial Metal backend source and SDL integration), preceded by `36fd9adb` (tested combiner adapter). The next step is Apple compilation and correction against the Metal SDK, followed by runtime validation of color/material behavior. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 35c05029986443c44253293b103a0ed0138090ed..91023a3bf187f04160eeab957b2a3a74a9e55586 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -3,7 +3,7 @@
+ ## Starting baseline
+ 
+ - CoopDX source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`.
+-- Linux desktop build: `make -j2` passed before renderer changes and after Mission 01 ZIP-import changes.
++- Linux desktop build: `make -j2` passed before renderer changes and after Mission 01 ZIP-import changes; see Mission 02 checkpoint below for current post-change result.
+ - `make test`: blocked because the test target invokes missing `mupen64plus`.
+ - iOS configure/build/IPA: not run successfully; the Linux environment has neither `xcodebuild` nor `xcrun`. `build_ios.sh generate` exits at its Xcode tools prerequisite.
+ - No Metal shader has been compiled by Apple's Metal compiler; no iPhone runtime or pixels have been verified.
+@@ -15,7 +15,9 @@
+ - `make -j2` — passed after C/UI/SDL selection changes; links `build/us_pc/sm64coopdx`. The Linux build does not compile the iOS-only Objective-C Metal source.
+ - `git diff --check` — passed.
+ - `xcodebuild` and `xcrun` are absent in this environment. `lib/SDL2-source` is also absent, although `CMakeLists.txt` requires it and applies local SDL patches there. Consequently no iOS CMake configure, Apple Metal compilation, arm64 link, IPA packaging, or device execution has occurred.
+-- Metal renderer source has only been reviewed locally; no claim of Metal SDK validity, rendering parity, mod rendering, or on-device functionality is made.
++- `cmake -S . -B /tmp/coopdx-m02-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — failed at `add_subdirectory` because `/home/larry/Projects/sm64coopdx-metal/lib/SDL2-source` is missing.
++- `./build_ios.sh generate` — stopped at the script's Xcode tools prerequisite because `xcrun` is unavailable.
++- Metal renderer source has been implemented but not compiled by an Apple SDK; no claim of Metal SDK validity, rendering parity, mod rendering, or on-device functionality is made.
+ - `make test` remains blocked by the missing `mupen64plus` executable noted in the baseline.
+ 
+ ## Required evidence labels
+-- 
+2.56.1
+

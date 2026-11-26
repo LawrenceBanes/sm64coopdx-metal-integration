@@ -1,0 +1,250 @@
+From 8c639168b57de6751cbcee44374e6a362e74facd Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 18:23:39 -0600
+Subject: [PATCH 12/13] Pin and verify SDL2 iOS build dependency
+
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index af01840567f9aaececf39d4bf844e9513a0c0568..bd90766eb8b790945e5205a7c73054f944751cd4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -168,6 +168,10 @@ set(ALL_SOURCES
+ )
+ 
+ # ---- SDL2 (build from source for iOS) ----
++if(NOT EXISTS "${GAME_ROOT}/lib/SDL2-source/CMakeLists.txt")
++    message(FATAL_ERROR
++        "Pinned SDL2 source is missing. Run './build_ios.sh prepare-sdl' before configuring the iOS target.")
++endif()
+ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+ set(SDL_STATIC ON CACHE BOOL "" FORCE)
+ set(SDL_TEST OFF CACHE BOOL "" FORCE)
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 4daec2eb9701fe732c4f20c6873043f7a683cde9..2ba7767a38103fe6fcab16dde0a985f24e281a2d 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -1,7 +1,7 @@
+ # CoopDX Metal Integration Handoff
+ 
+ Project: `/home/larry/Projects/sm64coopdx-metal`  
+-Branch: `mission-02-metal-integration`  
++Branch: `mission-03-04-metal-first-light-parity`
+ Starting commit: `34e638ec4a9098dda878998a46333ef21fea731c`  
+ Upstream CoopDX baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`
+ 
+@@ -11,4 +11,8 @@ Mission 02 has a tested semantic combiner-to-MSL generator (`src/pc/gfx/gfx_meta
+ 
+ The upstream iOS and Metal renderer roots have no project-level license grant identified. No renderer code has been copied. The local Metal reference remote's SSH fetch failed due a system SSH config permission error; HTTPS confirms its remote `mission-81-shader64-rendergraph` at `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. The existing local Metal worktree is on `mission-55-6-codemagic` with a pre-existing modified `src/game/skybox.c`; the Mission 81 worktree has pre-existing untracked `--repo`; Mission 82 has pre-existing gameplay/runtime modifications. All were left untouched.
+ 
+-Current commit: `eb7ab3ae`; implementation commits are `36fd9adb` (host-tested combiner adapter), `9d32baa8` (Metal/SDL backend integration), `1652a74a` (validation limits), `1664cd7b` (world color flags and three-point texture filtering), and `6d3f47a0` (Metal runtime shader failure guard). The Linux game build, adapter tests, and ASan/UBSan adapter tests pass. The next step is Apple compilation and correction against the Metal SDK, followed by runtime validation of color/material behavior. The local checkout has no `lib/SDL2-source`, no `xcodebuild`/`xcrun`, and no personal Git remote configured, so it cannot currently produce or publish an iOS build. Do not push to `upstream`.
++Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedicated branch above. SDL2 iOS source is now pinned to the official 2.32.10 release archive (SHA-256 `5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165`); both project SDL patches apply to that release. `./build_ios.sh prepare-sdl` fetches and verifies it without tracking third-party source. CMake configuration with this source succeeds on Linux, but that is not an iOS compile.
++
++The GitHub CLI is authenticated for `LawrenceBanes`, but this checkout has no personal remote. `upstream` points to `LeoManrique/sm64coopdx-ios` and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied, but full-source publication is on hold pending a compatible distribution basis. Prefer a private patch/overlay repository that fetches the pinned public upstream source at build time rather than uploading the whole upstream tree.
++
++Latest Mission 03/04 local validation: `make -j2`, `tests/run_gfx_metal_coopdx_shader_test.sh`, and `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` pass. The SDL preparation script passed install, idempotence, and bad-checksum rejection checks. Linux CMake configured against patched SDL 2.32.10. No Xcode/iPhoneOS SDK is available locally, and no Apple CI run has occurred. The next concrete steps are to create a licensed-safe private overlay/build workflow with a temporary private extracted-assets input, run Apple compilation/MSL validation, then fix actual compile findings before expanding renderer parity.
+diff --git a/METAL_INTEGRATION_PLAN.md b/METAL_INTEGRATION_PLAN.md
+index 557d9008b5318466664165bd72511e74bbe8599b..a00df87435ab308422cce870f71e68fd837bb3bd 100644
+--- a/METAL_INTEGRATION_PLAN.md
++++ b/METAL_INTEGRATION_PLAN.md
+@@ -29,6 +29,8 @@ The fragment adapter evaluates each RGB/alpha combiner group from `shader_comman
+ 
+ The inspected CoopDX iOS and `sm64ios-metal` repository roots do not contain a project-level license or copying grant. The Metal project has third-party tool licenses, which do not grant rights to its renderer. Therefore no renderer source is copied in this milestone. Implement the backend and `ColorCombiner` adapter independently against the visible interfaces, and keep the native CoopDX source tree/history intact. Revisit direct reuse only if maintainers provide compatible permission.
+ 
++Mission 03 rechecked GitHub's repository license metadata and the local source tree: both `LeoManrique/sm64coopdx-ios` and `coop-deluxe/sm64coopdx` have no root `LICENSE`/`COPYING` file and report no recognized repository license. The personal `sm64ios-metal` renderer remains a reference only; no source from it was copied. Until distribution rights for the upstream tree are clarified, don't push a full mirror/fork. A patch-only private overlay can hold our changes and build workflow while fetching the pinned upstream revision at CI time.
++
+ ## Implementation sequence
+ 
+ 1. Build a portable CoopDX-combiner-to-MSL generator with deterministic cache keys and host tests.
+@@ -43,4 +45,11 @@ The inspected CoopDX iOS and `sm64ios-metal` repository roots do not contain a p
+ - An iOS Objective-C Metal backend has been added behind `GfxRenderingAPI`. It creates pipelines from the generated MSL, uploads RGBA textures, binds two tiles, implements depth/blend/decal/viewport/scissor state, and submits the frontend's triangle batches. GPU texture memory and per-batch vertex memory are bounded.
+ - SDL now creates a Metal view/layer when Metal is selected. The display menu offers OpenGL ES and Metal on iOS. OpenGL ES remains the default and Metal initialization or built-in shader precompile errors trigger a restart-free initialization fallback to OpenGL ES.
+ - The backend is currently **source implemented, not Apple compiled**. Runtime combiner variants used after startup can still fail independently; that path logs a diagnostic but does not hot-switch renderers. Full rendering parity is not claimed. Unsupported details are recorded in `RENDERER_PARITY.md`.
+-- iOS CMake/IPA validation is blocked locally by the absent `lib/SDL2-source` directory and absent Xcode/iOS SDK tools. Do not use the current source checkpoint as a device-test build until those prerequisites are restored and Apple compilation succeeds.
++- The missing SDL source is resolved reproducibly as recorded below. iOS CMake/IPA validation is still blocked locally by absent Xcode/iOS SDK tools; do not use the current source checkpoint as a device-test build until Apple compilation succeeds.
++
++## Mission 03 dependency resolution
++
++- The project requires SDL2 (not SDL3): `CMakeLists.txt` invokes `add_subdirectory(lib/SDL2-source)` and builds the UIKit backend from that source.
++- SDL2 `2.30.9` was probed and rejected as the pin because `patches/sdl2-ios-uiscene.patch` does not apply to its UIKit sources.
++- The official SDL `release-2.32.10` archive was downloaded and SHA-256 verified as `5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165`. Both checked-in iOS patches apply cleanly to it. `scripts/prepare_sdl2_ios.sh` pins, verifies, and installs the source under the gitignored `lib/SDL2-source`; `build_ios.sh generate/build/all` invokes that script before CMake.
++- The helper was checked for shell syntax, successful extraction, idempotence, and checksum mismatch rejection. Linux CMake configuration with the extracted and patched SDL source succeeds. This is not an Apple SDK compile.
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..392a85b0a87bbd9586a60d03bb128d1d7c1e4392
+--- /dev/null
++++ b/MISSION_03_04_PROGRESS.md
+@@ -0,0 +1,49 @@
++# Missions 03/04 Progress
++
++## Current checkpoint
++
++- Branch: `mission-03-04-metal-first-light-parity`
++- Starting commit: `fd2c768729b60f926382086b50f25b97c60b725d`
++- Current source status: SDL2 dependency pin and Mission 03 validation documentation are in progress; no Apple CI run or IPA exists yet.
++- Renderer reference worktree, Mission 81, and all unrelated repositories remain unchanged.
++
++## Completed this checkpoint
++
++- Verified `gh auth status`, account `LawrenceBanes`, and repository-list access.
++- Confirmed this clone's only remote is `upstream` (`LeoManrique/sm64coopdx-ios`). No personal source remote is configured; do not push this tree to upstream.
++- Checked the iOS fork and upstream CoopDX GitHub license metadata and root files. Neither project reports an identified license or includes a root `LICENSE`/`COPYING`; no existing Metal source was copied. A full-source mirror upload is deferred until distribution terms are resolved. Preferred build-hosting shape: private patch overlay that retrieves the pinned public upstream checkout at build time.
++- Probed SDL releases. SDL 2.30.9 accepts the iPad gamepad patch but not `sdl2-ios-uiscene.patch`. Official SDL 2.32.10 accepts both.
++- Added `scripts/prepare_sdl2_ios.sh`, pinned to the SDL 2.32.10 release archive and SHA-256. It downloads to a temporary directory, verifies bytes/version, installs only under ignored `lib/SDL2-source`, is idempotent for its own marked install, and refuses to overwrite an unknown directory.
++- Added the SDL preparation step to `build_ios.sh` before iOS CMake configuration and a CMake missing-source diagnostic.
++- Refreshed `HANDOFF.md`, `METAL_INTEGRATION_PLAN.md`, and `VALIDATION.md` with current facts and evidence.
++
++## Validation
++
++- `make -j2` — passed; Linux game executable linked.
++- `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
++- `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed with ASan/UBSan.
++- SDL helper shell syntax, extraction, idempotence, and corrupted archive checksum rejection — passed.
++- `./build_ios.sh prepare-sdl` — passed against the pinned archive; both iOS patches applied during CMake configure.
++- `cmake -S . -B /tmp/coopdx-m03-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — passed configure/generate on Linux. This is not iPhoneOS compilation.
++- `make test` — blocked because the target attempts to execute `mupen64plus`, which is not installed (`Error 127`).
++- Apple SDK compilation, MSL validation, iOS arm64 link, IPA packaging, and device runtime — not run. `xcodebuild`/`xcrun` are absent.
++
++## Active blockers
++
++1. No authorized personal source remote exists yet. The full upstream tree is not suitable for private publication while source distribution terms remain unidentified. Establish a patch-only private overlay and reproducible materialization workflow, or obtain distribution permission; never push to `upstream`.
++2. Apple compilation requires a macOS runner plus a private, temporary extracted-asset input. The local `baserom.us.z64` remains ignored and was neither committed nor uploaded. Reuse a properly scoped private asset-bundle mechanism with checksum validation and cleanup.
++3. No successful iOS Metal compilation or runtime behavior has been established. All parity outside the portable shader adapter remains source implemented/unverified.
++
++## Next actions
++
++1. Finish a private overlay repository/build path that carries only the integration patch series and workflow, fetches exact upstream commit `6bfcfede7a5c1af400daa269931a9ae13ed157ad` at build time, and consumes a short-lived/private checksum-verified extracted-asset bundle.
++2. Add and execute macOS CI: Linux regressions, Xcode/iPhoneOS arm64 compile, actual Metal shader compilation, app link, unsigned IPA layout verification.
++3. Fix all actionable Apple compiler/linker/MSL failures, commit focused fixes, and rerun the workflow.
++4. After Mission 03 passes, continue Mission 04 with evidence-driven parity improvements and tests, keeping OpenGL ES operational.
++
++## Evidence categories
++
++- **Host tested:** portable combiner generator and Linux game build only.
++- **Apple compiled:** no.
++- **IPA packaged:** no.
++- **Device verified:** no.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 5d9ad8420d4e056db698acea56b0e6d9ed8ccc7b..6fe727c8fc77b2f8366ac3fd718e276f35912fc6 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -30,3 +30,16 @@
+ - **Device verified:** actual iPhone execution and visual output observed.
+ 
+ Update this record with exact commands and outcomes for each checkpoint. Do not promote one evidence class into another.
++
++## Mission 03/04 checkpoint (`mission-03-04-metal-first-light-parity`)
++
++- `make -j2` — passed on Linux; links `build/us_pc/sm64coopdx`.
++- `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
++- `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed under ASan/UBSan.
++- `SDL2_ARCHIVE=/tmp/coopdx-sdl-probe/SDL2-2.32.10.tar.gz SDL2_SOURCE_DIR=/tmp/coopdx-sdl-probe/target ./scripts/prepare_sdl2_ios.sh` — passed; a second invocation passed as an idempotent no-op; an invalid archive was rejected by checksum.
++- `./build_ios.sh prepare-sdl` — downloaded official SDL2 2.32.10 and verified SHA-256 `5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165`. No SDL source is tracked; `lib/SDL2-source` is ignored.
++- `cmake -S . -B /tmp/coopdx-m03-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — configure/generate passed on Linux and applied both iOS SDL patches. This does not validate UIKit/Metal compilation or iPhoneOS linking.
++- Probe against SDL2 2.30.9 — gamepad patch applied, but the iOS 27 UIScene patch did not; 2.30.9 is not an acceptable dependency pin.
++- `xcodebuild`/`xcrun` remain unavailable on this host. No macOS CI has yet run, and there is no IPA, Apple shader compilation, iOS link, or device result.
++- GitHub CLI authentication succeeded for `LawrenceBanes`; repository access is confirmed. The only configured Git remote is `upstream` (`LeoManrique/sm64coopdx-ios`); no personal source remote exists. The upstream repositories report no license metadata and contain no root license file, so a full-source push remains deferred. Do not push to upstream.
++- Local `baserom.us.z64` is gitignored and was not committed or uploaded. A remote IPA build still needs a controlled, temporary private extracted-asset input and cleanup path.
+diff --git a/build_ios.sh b/build_ios.sh
+index 3682e442bdc7ec2bda06f1b59bfa2495550c24ab..919b4494566ee2d127930b17c6fdb2a90dca50bb 100755
+--- a/build_ios.sh
++++ b/build_ios.sh
+@@ -89,6 +89,7 @@ desktop() {
+ # ---- Generate Xcode project ----
+ generate() {
+     echo "==> Generating Xcode project (version $APP_VERSION)..."
++    ./scripts/prepare_sdl2_ios.sh
+     cmake -B "$BUILD_DIR" -G Xcode \
+         -DCMAKE_SYSTEM_NAME=iOS \
+         -DCMAKE_OSX_ARCHITECTURES=arm64 \
+@@ -155,6 +156,7 @@ usage() {
+     echo "  clean       Clean build artifacts"
+     echo "  ipa         Package .app into .ipa for sideloading"
+     echo "  desktop     Build native desktop (macOS) .app bundle at build/us_pc/sm64coopdx.app"
++    echo "  prepare-sdl Download and checksum-verify the pinned SDL2 iOS source"
+     echo "  all         Full pipeline: build assets + clean + build iOS + package IPA"
+     echo ""
+     echo "Prerequisites:"
+@@ -169,6 +171,7 @@ case "${1:-}" in
+     clean)          clean ;;
+     ipa)            ipa ;;
+     desktop)        check_prerequisites; desktop ;;
++    prepare-sdl)    ./scripts/prepare_sdl2_ios.sh ;;
+     all)            all ;;
+     *)              all ;;
+ esac
+diff --git a/scripts/prepare_sdl2_ios.sh b/scripts/prepare_sdl2_ios.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..8838e13a266943ed79ff9bfc7150ddbba0777f7a
+--- /dev/null
++++ b/scripts/prepare_sdl2_ios.sh
+@@ -0,0 +1,67 @@
++#!/bin/sh
++set -eu
++
++ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
++SDL_DIR=${SDL2_SOURCE_DIR:-"$ROOT/lib/SDL2-source"}
++SDL_VERSION=2.32.10
++SDL_ARCHIVE_SHA256=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
++SDL_ARCHIVE_URL="https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
++MARKER=.coopdx-sdl2-source
++
++sha256() {
++    if command -v shasum >/dev/null 2>&1; then
++        shasum -a 256 "$1" | awk '{print $1}'
++    elif command -v sha256sum >/dev/null 2>&1; then
++        sha256sum "$1" | awk '{print $1}'
++    else
++        echo "Error: shasum or sha256sum is required." >&2
++        exit 1
++    fi
++}
++
++if [ -d "$SDL_DIR" ]; then
++    if [ -f "$SDL_DIR/$MARKER" ] && grep -Fxq "SDL ${SDL_VERSION} ${SDL_ARCHIVE_SHA256}" "$SDL_DIR/$MARKER"; then
++        echo "SDL ${SDL_VERSION} already prepared at $SDL_DIR"
++        exit 0
++    fi
++    echo "Error: refusing to replace unmarked or differently versioned SDL source: $SDL_DIR" >&2
++    echo "Move it aside yourself, then rerun this script." >&2
++    exit 1
++fi
++
++if [ -n "${SDL2_ARCHIVE:-}" ]; then
++    ARCHIVE=$SDL2_ARCHIVE
++    CLEAN_ARCHIVE=0
++else
++    TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/coopdx-sdl2.XXXXXX")
++    trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
++    ARCHIVE="$TMP_ROOT/SDL2-${SDL_VERSION}.tar.gz"
++    curl --fail --location --retry 3 --output "$ARCHIVE" "$SDL_ARCHIVE_URL"
++    CLEAN_ARCHIVE=1
++fi
++
++ACTUAL_SHA256=$(sha256 "$ARCHIVE")
++if [ "$ACTUAL_SHA256" != "$SDL_ARCHIVE_SHA256" ]; then
++    echo "Error: SDL archive checksum mismatch." >&2
++    echo "Expected: $SDL_ARCHIVE_SHA256" >&2
++    echo "Actual:   $ACTUAL_SHA256" >&2
++    exit 1
++fi
++
++if [ "$CLEAN_ARCHIVE" = 1 ]; then
++    SOURCE_TMP="$TMP_ROOT/SDL2-${SDL_VERSION}"
++else
++    TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/coopdx-sdl2.XXXXXX")
++    trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
++    SOURCE_TMP="$TMP_ROOT/SDL2-${SDL_VERSION}"
++fi
++tar -xzf "$ARCHIVE" -C "$TMP_ROOT"
++if [ ! -f "$SOURCE_TMP/CMakeLists.txt" ] || ! grep -Eq '#define SDL_MAJOR_VERSION[[:space:]]+2([[:space:]]|$)' "$SOURCE_TMP/include/SDL_version.h" || ! grep -Eq '#define SDL_MINOR_VERSION[[:space:]]+32([[:space:]]|$)' "$SOURCE_TMP/include/SDL_version.h" || ! grep -Eq '#define SDL_PATCHLEVEL[[:space:]]+10([[:space:]]|$)' "$SOURCE_TMP/include/SDL_version.h"; then
++    echo "Error: downloaded archive does not contain the expected SDL ${SDL_VERSION} source." >&2
++    exit 1
++fi
++
++mkdir -p "$(dirname -- "$SDL_DIR")"
++mv "$SOURCE_TMP" "$SDL_DIR"
++printf 'SDL %s %s\n' "$SDL_VERSION" "$SDL_ARCHIVE_SHA256" > "$SDL_DIR/$MARKER"
++echo "Prepared verified SDL ${SDL_VERSION} source at $SDL_DIR"
+-- 
+2.56.1
+

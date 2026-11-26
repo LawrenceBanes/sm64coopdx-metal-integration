@@ -1,0 +1,163 @@
+From e6a754d251095612e0f875754f002357c55ce4c8 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 18:34:29 -0600
+Subject: [PATCH 13/13] Enable ROM-free compile validation and emit MSL
+ fixtures
+
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 2ba7767a38103fe6fcab16dde0a985f24e281a2d..d6f35725160934f3b3a8af490b9c0d8b485c0f35 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -15,4 +15,4 @@ Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedica
+ 
+ The GitHub CLI is authenticated for `LawrenceBanes`, but this checkout has no personal remote. `upstream` points to `LeoManrique/sm64coopdx-ios` and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied, but full-source publication is on hold pending a compatible distribution basis. Prefer a private patch/overlay repository that fetches the pinned public upstream source at build time rather than uploading the whole upstream tree.
+ 
+-Latest Mission 03/04 local validation: `make -j2`, `tests/run_gfx_metal_coopdx_shader_test.sh`, and `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` pass. The SDL preparation script passed install, idempotence, and bad-checksum rejection checks. Linux CMake configured against patched SDL 2.32.10. No Xcode/iPhoneOS SDK is available locally, and no Apple CI run has occurred. The next concrete steps are to create a licensed-safe private overlay/build workflow with a temporary private extracted-assets input, run Apple compilation/MSL validation, then fix actual compile findings before expanding renderer parity.
++Latest Mission 03/04 local validation: `make -j2`, the combiner adapter tests, and ASan/UBSan tests pass. A fresh clone reconstructed from pinned upstream plus the patch series builds on Linux without a ROM. The SDL preparation helper passed installation, idempotence, and checksum rejection checks; Linux CMake configured against patched SDL 2.32.10. No Xcode/iPhoneOS SDK is available locally, and no Apple CI run has occurred. The next concrete steps are to create a licensed-safe private overlay/build workflow, run Apple compilation and MSL validation, then fix actual compile findings before expanding renderer parity.
+diff --git a/METAL_INTEGRATION_PLAN.md b/METAL_INTEGRATION_PLAN.md
+index a00df87435ab308422cce870f71e68fd837bb3bd..5bd508571d7c4faf5bcf48e5c58d727e6779380e 100644
+--- a/METAL_INTEGRATION_PLAN.md
++++ b/METAL_INTEGRATION_PLAN.md
+@@ -45,7 +45,7 @@ Mission 03 rechecked GitHub's repository license metadata and the local source t
+ - An iOS Objective-C Metal backend has been added behind `GfxRenderingAPI`. It creates pipelines from the generated MSL, uploads RGBA textures, binds two tiles, implements depth/blend/decal/viewport/scissor state, and submits the frontend's triangle batches. GPU texture memory and per-batch vertex memory are bounded.
+ - SDL now creates a Metal view/layer when Metal is selected. The display menu offers OpenGL ES and Metal on iOS. OpenGL ES remains the default and Metal initialization or built-in shader precompile errors trigger a restart-free initialization fallback to OpenGL ES.
+ - The backend is currently **source implemented, not Apple compiled**. Runtime combiner variants used after startup can still fail independently; that path logs a diagnostic but does not hot-switch renderers. Full rendering parity is not claimed. Unsupported details are recorded in `RENDERER_PARITY.md`.
+-- The missing SDL source is resolved reproducibly as recorded below. iOS CMake/IPA validation is still blocked locally by absent Xcode/iOS SDK tools; do not use the current source checkpoint as a device-test build until Apple compilation succeeds.
++- The missing SDL source is resolved reproducibly as recorded below. The iOS compiler path does not need the user's runtime ROM: a clean Linux checkout built successfully without `baserom.us.z64`. iOS CMake/IPA validation is still blocked locally by absent Xcode/iOS SDK tools; do not use the current source checkpoint as a device-test build until Apple compilation succeeds.
+ 
+ ## Mission 03 dependency resolution
+ 
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+index 392a85b0a87bbd9586a60d03bb128d1d7c1e4392..883dcf9dbd71aa04539eacb5fff96a2485b66a25 100644
+--- a/MISSION_03_04_PROGRESS.md
++++ b/MISSION_03_04_PROGRESS.md
+@@ -4,7 +4,7 @@
+ 
+ - Branch: `mission-03-04-metal-first-light-parity`
+ - Starting commit: `fd2c768729b60f926382086b50f25b97c60b725d`
+-- Current source status: SDL2 dependency pin and Mission 03 validation documentation are in progress; no Apple CI run or IPA exists yet.
++- Current source status: SDL2 pin is committed; Apple CI infrastructure and Mission 04 work remain. No Apple CI run or IPA exists yet.
+ - Renderer reference worktree, Mission 81, and all unrelated repositories remain unchanged.
+ 
+ ## Completed this checkpoint
+@@ -15,6 +15,8 @@
+ - Probed SDL releases. SDL 2.30.9 accepts the iPad gamepad patch but not `sdl2-ios-uiscene.patch`. Official SDL 2.32.10 accepts both.
+ - Added `scripts/prepare_sdl2_ios.sh`, pinned to the SDL 2.32.10 release archive and SHA-256. It downloads to a temporary directory, verifies bytes/version, installs only under ignored `lib/SDL2-source`, is idempotent for its own marked install, and refuses to overwrite an unknown directory.
+ - Added the SDL preparation step to `build_ios.sh` before iOS CMake configuration and a CMake missing-source diagnostic.
++- Removed the build script's false ROM prerequisite after a fresh clone built successfully with no ROM present. Users still supply/import a ROM at app runtime.
++- Extended the combiner regression harness to emit its real generated MSL fixture for Apple's Metal compiler.
+ - Refreshed `HANDOFF.md`, `METAL_INTEGRATION_PLAN.md`, and `VALIDATION.md` with current facts and evidence.
+ 
+ ## Validation
+@@ -25,18 +27,20 @@
+ - SDL helper shell syntax, extraction, idempotence, and corrupted archive checksum rejection — passed.
+ - `./build_ios.sh prepare-sdl` — passed against the pinned archive; both iOS patches applied during CMake configure.
+ - `cmake -S . -B /tmp/coopdx-m03-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — passed configure/generate on Linux. This is not iPhoneOS compilation.
++- A fresh clone reconstructed from the pinned upstream commit plus the Mission 01/02 patch series completed `make -j2` without `baserom.us.z64`.
++- `METAL_MSL_OUTPUT='/tmp/coopdx msl emitted.metal' tests/run_gfx_metal_coopdx_shader_test.sh` and the sanitized counterpart — passed; emitted the same 3,905-byte generated MSL fixture.
+ - `make test` — blocked because the target attempts to execute `mupen64plus`, which is not installed (`Error 127`).
+ - Apple SDK compilation, MSL validation, iOS arm64 link, IPA packaging, and device runtime — not run. `xcodebuild`/`xcrun` are absent.
+ 
+ ## Active blockers
+ 
+ 1. No authorized personal source remote exists yet. The full upstream tree is not suitable for private publication while source distribution terms remain unidentified. Establish a patch-only private overlay and reproducible materialization workflow, or obtain distribution permission; never push to `upstream`.
+-2. Apple compilation requires a macOS runner plus a private, temporary extracted-asset input. The local `baserom.us.z64` remains ignored and was neither committed nor uploaded. Reuse a properly scoped private asset-bundle mechanism with checksum validation and cleanup.
++2. Apple compilation requires a macOS runner. The runtime ROM is not required for compilation; no ROM or derived asset bundle will be uploaded for this build.
+ 3. No successful iOS Metal compilation or runtime behavior has been established. All parity outside the portable shader adapter remains source implemented/unverified.
+ 
+ ## Next actions
+ 
+-1. Finish a private overlay repository/build path that carries only the integration patch series and workflow, fetches exact upstream commit `6bfcfede7a5c1af400daa269931a9ae13ed157ad` at build time, and consumes a short-lived/private checksum-verified extracted-asset bundle.
++1. Finish a private overlay repository/build path that carries only the integration patch series and workflow and fetches exact upstream commit `6bfcfede7a5c1af400daa269931a9ae13ed157ad` at build time.
+ 2. Add and execute macOS CI: Linux regressions, Xcode/iPhoneOS arm64 compile, actual Metal shader compilation, app link, unsigned IPA layout verification.
+ 3. Fix all actionable Apple compiler/linker/MSL failures, commit focused fixes, and rerun the workflow.
+ 4. After Mission 03 passes, continue Mission 04 with evidence-driven parity improvements and tests, keeping OpenGL ES operational.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 6fe727c8fc77b2f8366ac3fd718e276f35912fc6..f62a53971162be02f89e806aa266e8a13f01b13f 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -39,7 +39,8 @@ Update this record with exact commands and outcomes for each checkpoint. Do not
+ - `SDL2_ARCHIVE=/tmp/coopdx-sdl-probe/SDL2-2.32.10.tar.gz SDL2_SOURCE_DIR=/tmp/coopdx-sdl-probe/target ./scripts/prepare_sdl2_ios.sh` — passed; a second invocation passed as an idempotent no-op; an invalid archive was rejected by checksum.
+ - `./build_ios.sh prepare-sdl` — downloaded official SDL2 2.32.10 and verified SHA-256 `5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165`. No SDL source is tracked; `lib/SDL2-source` is ignored.
+ - `cmake -S . -B /tmp/coopdx-m03-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — configure/generate passed on Linux and applied both iOS SDL patches. This does not validate UIKit/Metal compilation or iPhoneOS linking.
++- A fresh clone reconstructed from the pinned upstream commit plus the Mission 01/02 patch series completed `make -j2` in `/tmp/mission-03-repro` without `baserom.us.z64`. This confirms the ROM is not a compile-time dependency for the desktop asset-generation/build step; the app still expects the user to import a legally obtained game ROM at runtime.
+ - Probe against SDL2 2.30.9 — gamepad patch applied, but the iOS 27 UIScene patch did not; 2.30.9 is not an acceptable dependency pin.
+ - `xcodebuild`/`xcrun` remain unavailable on this host. No macOS CI has yet run, and there is no IPA, Apple shader compilation, iOS link, or device result.
+ - GitHub CLI authentication succeeded for `LawrenceBanes`; repository access is confirmed. The only configured Git remote is `upstream` (`LeoManrique/sm64coopdx-ios`); no personal source remote exists. The upstream repositories report no license metadata and contain no root license file, so a full-source push remains deferred. Do not push to upstream.
+-- Local `baserom.us.z64` is gitignored and was not committed or uploaded. A remote IPA build still needs a controlled, temporary private extracted-asset input and cleanup path.
++- Local `baserom.us.z64` is gitignored and was not committed or uploaded. The standard build can proceed without copying it into CI; the runtime ROM import remains a device-test requirement.
+diff --git a/build_ios.sh b/build_ios.sh
+index 919b4494566ee2d127930b17c6fdb2a90dca50bb..151222d09ed3c4d03e76f75bf73f22b6d9303e41 100755
+--- a/build_ios.sh
++++ b/build_ios.sh
+@@ -38,11 +38,6 @@ check_prerequisites() {
+         exit 1
+     fi
+ 
+-    if [ ! -f "baserom.us.z64" ]; then
+-        echo "Error: baserom.us.z64 not found in repo root."
+-        echo "Place your base ROM as baserom.us.z64 before building."
+-        exit 1
+-    fi
+ }
+ 
+ # ---- Desktop build (generates assets) ----
+@@ -162,6 +157,7 @@ usage() {
+     echo "Prerequisites:"
+     echo "  - macOS with Xcode and iOS SDK installed"
+     echo "  - CMake (brew install cmake)"
++    echo "  - The game ROM is imported by the user at runtime; it is not needed or bundled for compilation."
+ }
+ 
+ # ---- Entry point ----
+diff --git a/tests/gfx_metal_coopdx_shader_test.c b/tests/gfx_metal_coopdx_shader_test.c
+index 5b139569afc072974fb69e6f08a65f014e42d5ac..919f3b13222bc08a21ed7f13a6ba30a0c3359e45 100644
+--- a/tests/gfx_metal_coopdx_shader_test.c
++++ b/tests/gfx_metal_coopdx_shader_test.c
+@@ -10,7 +10,7 @@ void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1,
+     (void)rgb1; (void)alpha1; (void)rgb2; (void)alpha2; (void)flags;
+ }
+ 
+-int main(void) {
++int main(int argc, char **argv) {
+     struct ColorCombiner cc = { 0 };
+     cc.cm.use_alpha = true;
+     cc.cm.use_fog = true;
+@@ -64,6 +64,14 @@ int main(void) {
+ 
+     char tiny[16];
+     assert(!gfx_metal_coopdx_build_shader(&cc, tiny, sizeof(tiny), &info));
++    if (argc == 2) {
++        FILE *output = fopen(argv[1], "wb");
++        assert(output != NULL);
++        assert(fwrite(source, 1, strlen(source), output) == strlen(source));
++        assert(fclose(output) == 0);
++    } else {
++        assert(argc == 1);
++    }
+     puts("CoopDX Metal combiner adapter tests: passed");
+     return 0;
+ }
+diff --git a/tests/run_gfx_metal_coopdx_shader_test.sh b/tests/run_gfx_metal_coopdx_shader_test.sh
+index 8c04b73c797f9764cc1cbf74bedd4ba72e9db6ea..f8c6f3533471e3293eeed636930cb3575ee16d5a 100755
+--- a/tests/run_gfx_metal_coopdx_shader_test.sh
++++ b/tests/run_gfx_metal_coopdx_shader_test.sh
+@@ -19,7 +19,13 @@ fi
+     -o "$OUT"
+ 
+ if [[ "${SANITIZE:-0}" == "1" ]]; then
+-    ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "$OUT"
++    if [[ -n "${METAL_MSL_OUTPUT:-}" ]]; then
++        ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "$OUT" "$METAL_MSL_OUTPUT"
++    else
++        ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "$OUT"
++    fi
++elif [[ -n "${METAL_MSL_OUTPUT:-}" ]]; then
++    "$OUT" "$METAL_MSL_OUTPUT"
+ else
+     "$OUT"
+ fi
+-- 
+2.56.1
+

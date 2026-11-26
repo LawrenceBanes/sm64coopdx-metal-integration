@@ -1,0 +1,13 @@
+0001-Add-iOS-mod-ZIP-import-and-archive-safeguards.patch
+0002-Test-production-mod-ZIP-preflight.patch
+0003-Install-root-layout-Lua-ZIPs-as-named-mods.patch
+0004-Record-Mission-01-implementation-checkpoint.patch
+0005-Add-CoopDX-color-combiner-to-Metal-shader-adapter.patch
+0006-Add-initial-CoopDX-iOS-Metal-rendering-backend.patch
+0007-Record-Metal-backend-validation-limits.patch
+0008-Preserve-CoopDX-world-flags-and-texture-filtering-in.patch
+0009-Preserve-CoopDX-world-flags-and-texture-filtering-in.patch
+0010-Refresh-Mission-02-handoff-at-current-checkpoint.patch
+0011-Record-latest-Mission-02-handoff-commit.patch
+0012-Pin-and-verify-SDL2-iOS-build-dependency.patch
+0013-Enable-ROM-free-compile-validation-and-emit-MSL-fixt.patch

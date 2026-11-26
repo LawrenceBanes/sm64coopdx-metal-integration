@@ -1,0 +1,26 @@
+From 6d3f47a04b086baa339e72ac2fb995356095c545 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:42:12 -0600
+Subject: [PATCH 09/13] Preserve CoopDX world flags and texture filtering in
+ Metal shaders
+
+
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index fe1895766f25798b1c111f7b124db0e30d935cf9..2e363326c20a20b1231bd04330556deab564d2e9 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -202,6 +202,11 @@ static struct ShaderProgram *metal_create_shader(struct ColorCombiner *cc) {
+ 
+ static void metal_shader_get_info(struct ShaderProgram *program, uint8_t *numInputs, bool usedTextures[2]) {
+     struct MetalProgram *p = (struct MetalProgram *)program;
++    if (!p) {
++        if (numInputs) *numInputs = 0;
++        if (usedTextures) { usedTextures[0] = false; usedTextures[1] = false; }
++        return;
++    }
+     if (numInputs) *numInputs = (uint8_t)p->info.features.num_inputs;
+     if (usedTextures) { usedTextures[0] = p->info.features.used_textures[0]; usedTextures[1] = p->info.features.used_textures[1]; }
+ }
+-- 
+2.56.1
+

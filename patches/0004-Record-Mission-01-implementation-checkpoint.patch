@@ -1,0 +1,21 @@
+From 34e638ec4a9098dda878998a46333ef21fea731c Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 16:24:08 -0600
+Subject: [PATCH 04/13] Record Mission 01 implementation checkpoint
+
+
+diff --git a/MISSION_01_PROGRESS.md b/MISSION_01_PROGRESS.md
+index 7e6a1725288b293d60ce68713ecf0e02191b7476..977a8def399601cbf99fce8ddb050a3a7dd8afad 100644
+--- a/MISSION_01_PROGRESS.md
++++ b/MISSION_01_PROGRESS.md
+@@ -7,6 +7,7 @@
+ - Upstream remote: `https://github.com/LeoManrique/sm64coopdx-ios.git`
+ - Source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad` (upstream `main`)
+ - Recent local implementation checkpoints: `2def50bc` (iOS ZIP picker and initial safeguards), followed by preflight and root-layout compatibility changes.
++- Latest verified code checkpoint: `e2f34a45` (`Install root-layout Lua ZIPs as named mods`); working tree is clean after the checkpoint.
+ - Original Metal and Mission 82 worktrees were inspected and left untouched.
+ - No renderer source has been changed in this checkout.
+ 
+-- 
+2.56.1
+

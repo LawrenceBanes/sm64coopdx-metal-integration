@@ -1,0 +1,182 @@
+From 1664cd7b1650e0051b70864c5447d5a51441cee8 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:41:20 -0600
+Subject: [PATCH 08/13] Preserve CoopDX world flags and texture filtering in
+ Metal shaders
+
+
+diff --git a/METAL_INTEGRATION_PLAN.md b/METAL_INTEGRATION_PLAN.md
+index 913faa1492d6872262f09896a8c55fff2f33e42e..557d9008b5318466664165bd72511e74bbe8599b 100644
+--- a/METAL_INTEGRATION_PLAN.md
++++ b/METAL_INTEGRATION_PLAN.md
+@@ -39,7 +39,7 @@ The inspected CoopDX iOS and `sm64ios-metal` repository roots do not contain a p
+ 
+ ## Current implementation checkpoint
+ 
+-- A portable C generator now translates the CoopDX combiner commands to MSL and computes a canonical key from all combiner values, flags, input mapping, and commands. Its host tests cover the generated shader shape, key equality and vertex layout.
++- A portable C generator now translates the CoopDX combiner commands to MSL and computes a canonical key from all combiner values, flags, input mapping, and commands. It covers one/two cycles, texture-edge alpha, fog, light maps, the eight existing world shader flags, and CoopDX's three-point filtering path. Its host tests cover generated source, key equality and vertex layout.
+ - An iOS Objective-C Metal backend has been added behind `GfxRenderingAPI`. It creates pipelines from the generated MSL, uploads RGBA textures, binds two tiles, implements depth/blend/decal/viewport/scissor state, and submits the frontend's triangle batches. GPU texture memory and per-batch vertex memory are bounded.
+ - SDL now creates a Metal view/layer when Metal is selected. The display menu offers OpenGL ES and Metal on iOS. OpenGL ES remains the default and Metal initialization or built-in shader precompile errors trigger a restart-free initialization fallback to OpenGL ES.
+ - The backend is currently **source implemented, not Apple compiled**. Runtime combiner variants used after startup can still fail independently; that path logs a diagnostic but does not hot-switch renderers. Full rendering parity is not claimed. Unsupported details are recorded in `RENDERER_PARITY.md`.
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+index c5fc0aa743a6f559d8f255d7bfbd7195cb3ddd5d..818bf8b64415f0b69da13089bfc130910c7b18d8 100644
+--- a/RENDERER_PARITY.md
++++ b/RENDERER_PARITY.md
+@@ -3,9 +3,9 @@
+ | Feature | CoopDX OpenGL ES behavior | Metal status | Evidence / remaining work |
+ |---|---|---|---|
+ | Display-list and DynOS frontend | Shared `gfx_pc.c` interpreter and texture decoder | Must remain shared | No renderer port may bypass this frontend |
+-| Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented, host-tested source generator; MSL not Apple-compiled | Full key and basic 1/2-cycle formula, fog, edge discard and light-map handling; shader flags/dither/filter parity remain incomplete |
++| Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented, host-tested source generator; MSL not Apple-compiled | Full key and 1/2-cycle formula, fog, edge discard, light map, world color flags and three-point filter translation |
+ | Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source implemented | Dynamic descriptor follows generated metadata; no iOS compiler validation yet |
+-| Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Backend source implemented | Bounded cache and sampler creation; no invalidation/deletion callback exists in current API; DynOS replacement lifetime unverified |
++| Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Backend source implemented | Bounded cache, wrap/filter samplers, and CoopDX three-point sample path; no invalidation/deletion callback exists in current API; DynOS replacement lifetime unverified |
+ | Depth and decal | Backend depth test/write and z-mode decal callbacks | Backend source implemented | LEQUAL/always states and polygon depth bias; no GPU validation |
+ | Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Backend source implemented | GL blend factors are represented; no visual test of ordering or blend parity |
+ | Fog | Per-vertex fog attribute under combiner flag | Generator/backend source implemented | MSL mixes interpolated fog; no visual validation |
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 91023a3bf187f04160eeab957b2a3a74a9e55586..5d9ad8420d4e056db698acea56b0e6d9ed8ccc7b 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -13,6 +13,7 @@
+ - `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
+ - `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed under ASan/UBSan.
+ - `make -j2` — passed after C/UI/SDL selection changes; links `build/us_pc/sm64coopdx`. The Linux build does not compile the iOS-only Objective-C Metal source.
++- Adapter regression now asserts generated world color flag expressions and the CoopDX three-point sampling path in addition to alpha/fog/light-map/cycle variants.
+ - `git diff --check` — passed.
+ - `xcodebuild` and `xcrun` are absent in this environment. `lib/SDL2-source` is also absent, although `CMakeLists.txt` requires it and applies local SDL patches there. Consequently no iOS CMake configure, Apple Metal compilation, arm64 link, IPA packaging, or device execution has occurred.
+ - `cmake -S . -B /tmp/coopdx-m02-cmake-check -G Ninja -DCMAKE_OBJC_COMPILER=/usr/bin/clang` — failed at `add_subdirectory` because `/home/larry/Projects/sm64coopdx-metal/lib/SDL2-source` is missing.
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index cce39720276260c9bb02a79347b7b5331a21ed9f..fe1895766f25798b1c111f7b124db0e30d935cf9 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -13,6 +13,7 @@
+ #include "gfx_sdl.h"
+ #include "gfx_pc.h"
+ #include "gfx_cc.h"
++#include "pc/configfile.h"
+ 
+ #define METAL_SHADER_LIMIT 64
+ #define METAL_TEXTURE_LIMIT 32768
+@@ -289,6 +290,12 @@ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t tria
+     [sEncoder setFragmentBytes:&color length:sizeof(color) atIndex:0];
+     float frame = (float)sFrame;
+     [sEncoder setFragmentBytes:&frame length:sizeof(frame) atIndex:1];
++    [sEncoder setFragmentBytes:gShaderFlags length:sizeof(gShaderFlags) atIndex:2];
++    [sEncoder setFragmentBytes:gShaderFlagValues length:sizeof(gShaderFlagValues) atIndex:3];
++    int filterMode = (int)configFiltering;
++    [sEncoder setFragmentBytes:&filterMode length:sizeof(filterMode) atIndex:4];
++    uint32_t tileFilters[2] = { sLinear[0] ? 1u : 0u, sLinear[1] ? 1u : 0u };
++    [sEncoder setFragmentBytes:tileFilters length:sizeof(tileFilters) atIndex:5];
+     [sEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)triangleCount * 3];
+ }
+ 
+diff --git a/src/pc/gfx/gfx_metal_coopdx_shader.c b/src/pc/gfx/gfx_metal_coopdx_shader.c
+index 2ae681dc9e8a2fa1d51b4798a193ade2de61ce5d..020f957f76c41be40467fb2caa01595b3a97d653 100644
+--- a/src/pc/gfx/gfx_metal_coopdx_shader.c
++++ b/src/pc/gfx/gfx_metal_coopdx_shader.c
+@@ -148,6 +148,16 @@ static void emit_vertex(struct Writer *w, const struct GfxMetalCoopDXShaderInfo
+     (void)attribute;
+ }
+ 
++static void emit_world_helpers(struct Writer *w) {
++    append(w, "float3 rgb2hsv(float3 c) { float4 K=float4(0.0,-1.0/3.0,2.0/3.0,-1.0); float4 p=mix(float4(c.bg,K.wz),float4(c.gb,K.xy),step(c.b,c.g)); float4 q=mix(float4(p.xyw,c.r),float4(c.r,p.yzx),step(p.x,c.r)); float d=q.x-min(q.w,q.y); float e=1.0e-10; return float3(abs(q.z+(q.w-q.y)/(6.0*d+e)),d/(q.x+e),q.x); }\n");
++    append(w, "float3 hsv2rgb(float3 c) { float3 p=abs(fract(c.xxx+float3(0.0,2.0/3.0,1.0/3.0))*6.0-3.0); return c.z*mix(float3(1.0),clamp(p-1.0,0.0,1.0),c.y); }\n");
++    append(w, "float coopdx_dither4x4(float2 p,float brightness) { int x=int(fmod(p.x,4.0)); int y=int(fmod(p.y,4.0)); int i=x+y*4; const float m[16]={0.0625,0.5625,0.1875,0.6875,0.8125,0.3125,0.9375,0.4375,0.25,0.75,0.125,0.625,1.0,0.5,0.875,0.375}; return brightness<m[i]?0.0:1.0; }\n");
++}
++
++static void emit_filter_helper(struct Writer *w) {
++    append(w, "float4 coopdx_sample(texture2d<float> tex,sampler smp,float2 uv,bool dofilter,int filterMode) { if(dofilter && filterMode==2) { float2 size=float2(tex.get_width(),tex.get_height()); float2 offset=fract(uv*size-float2(0.5)); offset-=step(1.0,offset.x+offset.y); float4 c0=tex.sample(smp,uv-offset/size); float4 c1=tex.sample(smp,uv-float2(offset.x-sign(offset.x),offset.y)/size); float4 c2=tex.sample(smp,uv-float2(offset.x,offset.y-sign(offset.y))/size); return c0+abs(offset.x)*(c1-c0)+abs(offset.y)*(c2-c0); } return tex.sample(smp,uv); }\n");
++}
++
+ bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
+                                    char *source, size_t source_size,
+                                    struct GfxMetalCoopDXShaderInfo *info) {
+@@ -160,6 +170,7 @@ bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
+     info->texture_edge = combiner->cm.texture_edge;
+     info->two_cycle = combiner->cm.use_2cycle;
+     info->light_map = combiner->cm.light_map;
++    info->world_geometry = combiner->cm.world_geometry;
+ 
+     uint32_t attribute = 1;
+     for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) attribute++;
+@@ -177,10 +188,12 @@ bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
+ 
+     struct Writer w = { source, source_size, 0, true };
+     emit_vertex(&w, info);
+-    append(&w, "fragment float4 coopdx_fragment(VOut in [[stage_in]], texture2d<float> tex0 [[texture(0)]], texture2d<float> tex1 [[texture(1)]], sampler samp0 [[sampler(0)]], sampler samp1 [[sampler(1)]], constant float3 &lightMapColor [[buffer(0)]], constant float &frameCount [[buffer(1)]]) {\n");
+-    if (info->features.used_textures[0]) append(&w, "float4 texel0=tex0.sample(samp0,in.uv0);\n");
++    if (info->world_geometry) emit_world_helpers(&w);
++    if (info->features.used_textures[0] || info->features.used_textures[1]) emit_filter_helper(&w);
++    append(&w, "fragment float4 coopdx_fragment(VOut in [[stage_in]], texture2d<float> tex0 [[texture(0)]], texture2d<float> tex1 [[texture(1)]], sampler samp0 [[sampler(0)]], sampler samp1 [[sampler(1)]], constant float3 &lightMapColor [[buffer(0)]], constant float &frameCount [[buffer(1)]], constant int *shaderFlags [[buffer(2)]], constant float *shaderFlagValues [[buffer(3)]], constant int &filterMode [[buffer(4)]], constant uint *tileFilters [[buffer(5)]]) {\n");
++    if (info->features.used_textures[0]) append(&w, "float4 texel0=coopdx_sample(tex0,samp0,in.uv0,tileFilters[0]!=0,filterMode);\n");
+     if (info->features.used_textures[1]) {
+-        append(&w, "float2 uv1=%s; float4 texel1=tex1.sample(samp1,uv1);\n",
++        append(&w, "float2 uv1=%s; float4 texel1=coopdx_sample(tex1,samp1,uv1,tileFilters[1]!=0,filterMode);\n",
+                info->light_map ? "in.lightMap" : "in.uv1");
+         if (info->light_map) {
+             if (info->features.used_textures[0]) append(&w, "texel0.rgb*=lightMapColor;\n");
+@@ -200,6 +213,16 @@ bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
+         append(&w, ");\n");
+     }
+     if (info->texture_edge && info->alpha) append(&w, "if(combined.a>0.3) combined.a=1.0; else discard_fragment();\n");
++    if (info->world_geometry) {
++        append(&w, "if(shaderFlags[0]==1) { float3 hsv=rgb2hsv(combined.rgb); hsv.x=fract(hsv.x+shaderFlagValues[0]); combined.rgb=hsv2rgb(hsv); }\n");
++        append(&w, "if(shaderFlags[1]==1) { const float3 w=float3(0.2125,0.7154,0.0721); float3 intensity=float3(dot(combined.rgb,w)); combined.rgb=mix(intensity,combined.rgb,shaderFlagValues[1]); }\n");
++        append(&w, "if(shaderFlags[2]==1) combined.rgb*=shaderFlagValues[2];\n");
++        append(&w, "if(shaderFlags[3]==1) combined.rgb=float3(0.5)+shaderFlagValues[3]*(combined.rgb-float3(0.5));\n");
++        append(&w, "if(shaderFlags[4]==1) combined.rgb*=shaderFlagValues[4];\n");
++        append(&w, "if(shaderFlags[5]==1) combined.rgb*=coopdx_dither4x4(in.position.xy,dot(combined.rgb,float3(0.299,0.587,0.114)));\n");
++        append(&w, "if(shaderFlags[6]==1) { float levels=float(int(max(1.0,shaderFlagValues[6]))); combined.rgb=floor(combined.rgb*levels)/levels; }\n");
++        append(&w, "if(shaderFlags[7]==1) { float scan=sin(in.position.y*1.5)*0.04; combined.rgb-=scan*shaderFlagValues[7]; }\n");
++    }
+     if (info->fog) append(&w, "combined.rgb=mix(combined.rgb,in.fog.rgb,in.fog.a);\n");
+     if (!info->alpha) append(&w, "combined.a=1.0;\n");
+     append(&w, "return combined; }\n");
+diff --git a/src/pc/gfx/gfx_metal_coopdx_shader.h b/src/pc/gfx/gfx_metal_coopdx_shader.h
+index edf9b13e29d1fff6bb72ecd4f4a34eb02282c7a5..eb1c465151c8809de88f5a34b617389b7c5cf44f 100644
+--- a/src/pc/gfx/gfx_metal_coopdx_shader.h
++++ b/src/pc/gfx/gfx_metal_coopdx_shader.h
+@@ -20,6 +20,7 @@ struct GfxMetalCoopDXShaderInfo {
+     bool texture_edge;
+     bool two_cycle;
+     bool light_map;
++    bool world_geometry;
+     uint8_t attribute_count;
+     uint16_t vertex_stride;
+ };
+diff --git a/tests/gfx_metal_coopdx_shader_test.c b/tests/gfx_metal_coopdx_shader_test.c
+index 52144aafd78b78dfb34f25418a40a6c2c9c314a9..5b139569afc072974fb69e6f08a65f014e42d5ac 100644
+--- a/tests/gfx_metal_coopdx_shader_test.c
++++ b/tests/gfx_metal_coopdx_shader_test.c
+@@ -17,6 +17,7 @@ int main(void) {
+     cc.cm.texture_edge = true;
+     cc.cm.use_2cycle = true;
+     cc.cm.light_map = true;
++    cc.cm.world_geometry = true;
+     cc.shader_commands[0] = SHADER_TEXEL0;
+     cc.shader_commands[1] = SHADER_INPUT_1;
+     cc.shader_commands[2] = SHADER_INPUT_2;
+@@ -37,7 +38,7 @@ int main(void) {
+     struct GfxMetalCoopDXShaderInfo info;
+     char source[8192];
+     assert(gfx_metal_coopdx_build_shader(&cc, source, sizeof(source), &info));
+-    assert(info.alpha && info.fog && info.texture_edge && info.two_cycle && info.light_map);
++    assert(info.alpha && info.fog && info.texture_edge && info.two_cycle && info.light_map && info.world_geometry);
+     assert(info.features.num_inputs == 3);
+     assert(info.features.used_textures[0] && info.features.used_textures[1]);
+     assert(info.vertex_stride == (4u + 2u + 2u + 4u + 2u + 3u * 4u) * sizeof(float));
+@@ -47,6 +48,10 @@ int main(void) {
+     assert(strstr(source, "(texel0.rgb - in.input1.rgb) * in.input2.rgb + in.input3.rgb") != NULL);
+     assert(strstr(source, "combined.rgb") != NULL);
+     assert(strstr(source, "discard_fragment()") != NULL);
++    assert(strstr(source, "coopdx_sample") != NULL);
++    assert(strstr(source, "filterMode==2") != NULL);
++    assert(strstr(source, "shaderFlags[0]") != NULL);
++    assert(strstr(source, "shaderFlags[7]") != NULL);
+     assert(strstr(source, "mix(combined.rgb,in.fog.rgb,in.fog.a)") != NULL);
+ 
+     struct GfxMetalCoopDXShaderKey key_a, key_b;
+-- 
+2.56.1
+

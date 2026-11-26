@@ -1,0 +1,478 @@
+From 36fd9adb443b2c31485516250eb9212206b49111 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 17:21:01 -0600
+Subject: [PATCH 05/13] Add CoopDX color combiner to Metal shader adapter
+
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f99e7661465af1b9767cb3478e41c634d4a4eed6
+--- /dev/null
++++ b/HANDOFF.md
+@@ -0,0 +1,14 @@
++# CoopDX Metal Integration Handoff
++
++Project: `/home/larry/Projects/sm64coopdx-metal`  
++Branch: `mission-02-metal-integration`  
++Starting commit: `34e638ec4a9098dda878998a46333ef21fea731c`  
++Upstream CoopDX baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`
++
++Mission 01 added an iOS Files ZIP picker and production-importer ZIP preflight, and preserved root-level Lua archive naming. No renderer source was changed or copied.
++
++Mission 02 has begun with `METAL_INTEGRATION_PLAN.md`, `RENDERER_PARITY.md`, and `VALIDATION.md`. Key constraint: CoopDX's `GfxRenderingAPI` receives full `ColorCombiner*` values; the previous iOS Metal implementation takes packed 32-bit IDs, so direct casting/hash mapping is invalid. Implement a new semantic MSL adapter under the CoopDX interface. Keep OpenGL ES and CoopDX's RSP/display-list/DynOS frontends.
++
++The upstream iOS and Metal renderer roots have no project-level license grant identified. No renderer code has been copied. The local Metal reference remote's SSH fetch failed due a system SSH config permission error; HTTPS confirms its remote `mission-81-shader64-rendergraph` at `259bcaa19ab5c7cd39dab28f1080a650e5739a4c`. The existing local Metal worktree is on `mission-55-6-codemagic` with a pre-existing modified `src/game/skybox.c`; the Mission 81 worktree has pre-existing untracked `--repo`; Mission 82 has pre-existing gameplay/runtime modifications. All were left untouched.
++
++Next: implement and test a portable full-`ColorCombiner` MSL source generator, then integrate it into a fresh iOS backend and SDL Metal surface while retaining GL fallback. Linux builds do not validate UIKit/Metal code. iOS build/IPA/device validation remains pending Xcode/macOS runner access.
+diff --git a/METAL_INTEGRATION_PLAN.md b/METAL_INTEGRATION_PLAN.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ce21b7d310fe101605e53f5879b271c8efd1f31
+--- /dev/null
++++ b/METAL_INTEGRATION_PLAN.md
+@@ -0,0 +1,38 @@
++# CoopDX Metal Integration Plan
++
++## Baseline and scope
++
++- Base: CoopDX iOS `main`, commit `6bfcfede7a5c1af400daa269931a9ae13ed157ad`.
++- Integration branch: `mission-02-metal-integration`, based on the Mission 01 local checkpoint `34e638ec4a9098dda878998a46333ef21fea731c`.
++- Keep CoopDX's display-list interpreter, game loop, Lua, DynOS, SDL/UIKit input and OpenGL ES backend authoritative. Add a renderer behind `GfxRenderingAPI`; do not port the previous game's RSP/display-list engine.
++- Metal remains opt-in until iOS parity and fallback are validated. OpenGL ES remains the recovery backend.
++
++## Existing renderer contract
++
++`gfx_pc.c` interprets display lists, decodes N64 textures, batches triangles into a float VBO, and sends backend operations through `GfxRenderingAPI`. A backend receives generated `ColorCombiner` objects, RGBA texture uploads, two texture slots, sampler modes, alpha/depth/decal state, viewport/scissor, batched triangles, and frame lifecycle callbacks.
++
++Shader creation is semantic, not an integer ID: `ColorCombiner` contains a `CombineMode`, 16 generated shader commands, input mapping and cache hash. The legacy Metal renderer accepts a packed 32-bit ID. Hashing or truncating a CoopDX combiner would lose command ordering, two-cycle behavior, fog/alpha flags, light-map state or input mapping. The integration will instead translate the CoopDX command sequence into an MSL program and cache by a canonical full combiner key.
++
++## Platform presentation
++
++The existing iOS window manager creates an SDL OpenGL window/context and swaps with `SDL_GL_SwapWindow`. Metal requires an SDL Metal-capable view/layer, a drawable acquired per frame, and a Metal command buffer presented at frame completion. Keep the event loop, touch/controller callbacks, orientation and SDL lifecycle, but branch only the surface creation, dimensions, and presentation operations according to the selected backend. The iOS CMake currently defines `RAPI_GL=1`; it must compile both GL and Metal implementations, link Metal/MetalKit/QuartzCore, and keep the existing GL path selectable.
++
++Backend changes require restart. Metal initialization must expose a readiness result to the top-level graphics initialization so a failed device/layer/pipeline setup can shut down Metal and recreate the SDL OpenGL surface before gameplay starts. Never continue with a half-initialized renderer.
++
++## Material and state adapter
++
++The MSL vertex descriptor follows `gfx_opengl_shader_get_info()` semantics: clip-space position, present texture coordinates, optional fog/light-map data, then `num_inputs` generated per-vertex vectors (3 or 4 components depending on `use_alpha`). The Metal backend must not assume model-space positions or native normals: CoopDX's PC renderer transforms vertices before submission.
++
++The fragment adapter evaluates each RGB/alpha combiner group from `shader_commands` using `(A - B) * C + D`, preserving 1-cycle/2-cycle combined values and the upstream optimized cases. It then applies texture-edge discard and fog in the existing order. N64 texture decoding remains in the shared frontend; Metal owns GPU upload/cache, wrap/filter sampler creation, state transitions, depth/decal/blend pipelines and draw submission.
++
++## Reuse and licensing
++
++The inspected CoopDX iOS and `sm64ios-metal` repository roots do not contain a project-level license or copying grant. The Metal project has third-party tool licenses, which do not grant rights to its renderer. Therefore no renderer source is copied in this milestone. Implement the backend and `ColorCombiner` adapter independently against the visible interfaces, and keep the native CoopDX source tree/history intact. Revisit direct reuse only if maintainers provide compatible permission.
++
++## Implementation sequence
++
++1. Build a portable CoopDX-combiner-to-MSL generator with deterministic cache keys and host tests.
++2. Add an iOS-only Metal backend implementing every current `GfxRenderingAPI` callback used by the interpreter.
++3. Add SDL Metal surface/present integration and restart-required backend choice, retaining OpenGL ES fallback.
++4. Validate combiner/state behavior with host tests and Apple Metal shader compilation; build on a macOS runner before claiming iOS compilation.
++5. Exercise vanilla rendering, then DynOS/custom assets and Lua-driven graphics behavior. Defer post-processing and other effects until vanilla parity.
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..84a11053315146dca03b344a0442d5fc0705da5d
+--- /dev/null
++++ b/RENDERER_PARITY.md
+@@ -0,0 +1,19 @@
++# Renderer Parity Tracker
++
++| Feature | CoopDX OpenGL ES behavior | Metal status | Evidence / remaining work |
++|---|---|---|---|
++| Display-list and DynOS frontend | Shared `gfx_pc.c` interpreter and texture decoder | Must remain shared | No renderer port may bypass this frontend |
++| Color combiner | `ColorCombiner` command stream; generated GLSL | Not implemented yet | Build a full semantic MSL adapter; do not convert to the old packed ID |
++| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Not implemented yet | Derive `MTLVertexDescriptor` from combiner metadata |
++| Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Not implemented yet | Cache invalidation, sampler modes and repeated DynOS replacement tests |
++| Depth and decal | Backend depth test/write and z-mode decal callbacks | Not implemented yet | Pipeline/depth state parity tests |
++| Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Not implemented yet | Correct blend factors/order and test translucent surfaces |
++| Fog | Per-vertex fog attribute under combiner flag | Not implemented yet | Preserve fog factor and color semantics |
++| Light-map path | Secondary UV, texture 1 and light-map color | Not implemented yet | Need audit the exact light-map uniform source |
++| Viewport/scissor | Callback-driven screen state | Not implemented yet | Drawable scale and orientation validation |
++| Frame lifecycle | SDL GL context, GL clear/swap | Not implemented yet | Metal drawable acquisition, command completion and present |
++| HUD/UI/DJUI | Same display-list frontend with blended draws | Not implemented yet | Validate text/texture paths after base material parity |
++| Character animation / DynOS | Same game and graphics frontend | Not implemented yet | Runtime-loaded geometry and texture invalidation test |
++| OpenGL ES fallback | Current iOS default | Preserved in source | Must remain known-good and recoverable from failed Metal initialization |
++
++Terms such as “Metal backend”, “iOS build”, and “parity” remain unverified until the corresponding compile/runtime/device evidence is recorded.
+diff --git a/VALIDATION.md b/VALIDATION.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f62ea0e1577c6fc404a746e504b13563479c93f4
+--- /dev/null
++++ b/VALIDATION.md
+@@ -0,0 +1,19 @@
++# Mission 02 Validation Record
++
++## Starting baseline
++
++- CoopDX source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`.
++- Linux desktop build: `make -j2` passed before renderer changes and after Mission 01 ZIP-import changes.
++- `make test`: blocked because the test target invokes missing `mupen64plus`.
++- iOS configure/build/IPA: not run successfully; the Linux environment has neither `xcodebuild` nor `xcrun`. `build_ios.sh generate` exits at its Xcode tools prerequisite.
++- No Metal shader has been compiled by Apple's Metal compiler; no iPhone runtime or pixels have been verified.
++
++## Required evidence labels
++
++- **Source checked:** interfaces and call flow inspected only.
++- **Host tested:** portable adapter/tests executed on Linux.
++- **Apple compiled:** actual Xcode/iPhoneOS arm64 build completed.
++- **IPA packaged:** resulting app archive inspected.
++- **Device verified:** actual iPhone execution and visual output observed.
++
++Update this record with exact commands and outcomes for each checkpoint. Do not promote one evidence class into another.
+diff --git a/src/pc/gfx/gfx_metal_coopdx_shader.c b/src/pc/gfx/gfx_metal_coopdx_shader.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ae681dc9e8a2fa1d51b4798a193ade2de61ce5d
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx_shader.c
+@@ -0,0 +1,207 @@
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "gfx_metal_coopdx_shader.h"
++
++struct Writer {
++    char *data;
++    size_t capacity;
++    size_t length;
++    bool valid;
++};
++
++static void append(struct Writer *w, const char *format, ...) {
++    if (!w->valid || w->length >= w->capacity) {
++        w->valid = false;
++        return;
++    }
++    va_list args;
++    va_start(args, format);
++    int n = vsnprintf(w->data + w->length, w->capacity - w->length, format, args);
++    va_end(args);
++    if (n < 0 || (size_t)n >= w->capacity - w->length) {
++        w->valid = false;
++        return;
++    }
++    w->length += (size_t)n;
++}
++
++bool gfx_metal_coopdx_shader_key(const struct ColorCombiner *combiner,
++                                 struct GfxMetalCoopDXShaderKey *key) {
++    if (!combiner || !key) return false;
++    memcpy(key->bytes, combiner->cm.all_values, 16);
++    uint32_t flags = combiner->cm.flags & 0x7fu;
++    memcpy(key->bytes + 16, &flags, sizeof(flags));
++    memcpy(key->bytes + 20, combiner->shader_input_mapping, 16);
++    memcpy(key->bytes + 36, combiner->shader_commands, 16);
++    return true;
++}
++
++bool gfx_metal_coopdx_shader_key_equal(const struct GfxMetalCoopDXShaderKey *a,
++                                       const struct GfxMetalCoopDXShaderKey *b) {
++    return a && b && memcmp(a->bytes, b->bytes, GFX_METAL_COOPDX_KEY_SIZE) == 0;
++}
++
++static const char *input_type(bool alpha) { return alpha ? "float4" : "float3"; }
++
++static const char *input_expr(uint8_t command, bool alpha) {
++    static const char *names[] = {
++        "float3(0.0)", "in.input1", "in.input2", "in.input3", "in.input4",
++        "in.input5", "in.input6", "in.input7", "in.input8"
++    };
++    if (command >= SHADER_INPUT_1 && command <= SHADER_INPUT_8) {
++        const char *name = names[command - SHADER_INPUT_1 + 1];
++        if (!alpha) return name;
++        return name;
++    }
++    return NULL;
++}
++
++static void emit_value(struct Writer *w, uint8_t command, bool rgb, bool alpha, bool single_element) {
++    const char *input = input_expr(command, alpha);
++    if (input) {
++        append(w, "%s%s", input, rgb && alpha ? ".rgb" : (!rgb ? ".a" : ""));
++        return;
++    }
++    switch (command) {
++        case SHADER_0: append(w, rgb ? (alpha ? "float3(0.0)" : "float3(0.0)") : "0.0"); break;
++        case SHADER_1: append(w, rgb ? "float3(1.0)" : "1.0"); break;
++        case SHADER_TEXEL0: append(w, rgb ? (alpha ? "texel0.rgb" : "texel0.rgb") : "texel0.a"); break;
++        case SHADER_TEXEL0A:
++            if (!rgb || single_element) append(w, "texel0.a");
++            else append(w, "float3(texel0.a)");
++            break;
++        case SHADER_TEXEL1: append(w, rgb ? "texel1.rgb" : "texel1.a"); break;
++        case SHADER_TEXEL1A:
++            if (!rgb || single_element) append(w, "texel1.a");
++            else append(w, "float3(texel1.a)");
++            break;
++        case SHADER_COMBINED: append(w, rgb ? "combined.rgb" : "combined.a"); break;
++        case SHADER_COMBINEDA:
++            if (!rgb || single_element) append(w, "combined.a");
++            else append(w, "float3(combined.a)");
++            break;
++        case SHADER_NOISE: append(w, rgb ? "float3(noise)" : "noise"); break;
++        default: w->valid = false; break;
++    }
++}
++
++static void emit_formula(struct Writer *w, const uint8_t *cmd, bool rgb, bool alpha) {
++    if (rgb) {
++        uint8_t a = cmd[0], b = cmd[1], c = cmd[2], d = cmd[3];
++        if (c == SHADER_0) {
++            emit_value(w, d, true, alpha, false);
++        } else if (b == SHADER_0 && d == SHADER_0) {
++            emit_value(w, a, true, alpha, false);
++            append(w, " * ");
++            emit_value(w, c, true, alpha, true);
++        } else if (b == d) {
++            append(w, "mix("); emit_value(w, b, true, alpha, false); append(w, ", ");
++            emit_value(w, a, true, alpha, false); append(w, ", ");
++            emit_value(w, c, true, alpha, true); append(w, ")");
++        } else {
++            append(w, "("); emit_value(w, a, true, alpha, false); append(w, " - ");
++            emit_value(w, b, true, alpha, false); append(w, ") * ");
++            emit_value(w, c, true, alpha, true); append(w, " + ");
++            emit_value(w, d, true, alpha, false);
++        }
++    } else {
++        uint8_t a = cmd[4], b = cmd[5], c = cmd[6], d = cmd[7];
++        if (c == SHADER_0) {
++            emit_value(w, d, false, alpha, false);
++        } else if (b == SHADER_0 && d == SHADER_0) {
++            emit_value(w, a, false, alpha, false); append(w, " * ");
++            emit_value(w, c, false, alpha, true);
++        } else if (b == d) {
++            append(w, "mix("); emit_value(w, b, false, alpha, false); append(w, ", ");
++            emit_value(w, a, false, alpha, false); append(w, ", ");
++            emit_value(w, c, false, alpha, true); append(w, ")");
++        } else {
++            append(w, "("); emit_value(w, a, false, alpha, false); append(w, " - ");
++            emit_value(w, b, false, alpha, false); append(w, ") * ");
++            emit_value(w, c, false, alpha, true); append(w, " + ");
++            emit_value(w, d, false, alpha, false);
++        }
++    }
++}
++
++static void emit_vertex(struct Writer *w, const struct GfxMetalCoopDXShaderInfo *info) {
++    append(w, "#include <metal_stdlib>\nusing namespace metal;\n");
++    append(w, "struct VIn { float4 position [[attribute(0)]];\n");
++    uint32_t attribute = 1;
++    for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) append(w, "float2 uv%d [[attribute(%u)]];\n", t, attribute++);
++    if (info->fog) append(w, "float4 fog [[attribute(%u)]];\n", attribute++);
++    if (info->light_map) append(w, "float2 lightMap [[attribute(%u)]];\n", attribute++);
++    for (int i = 0; i < info->features.num_inputs; ++i) append(w, "%s input%d [[attribute(%u)]];\n", input_type(info->alpha), i + 1, attribute++);
++    append(w, "};\nstruct VOut { float4 position [[position]];\n");
++    for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) append(w, "float2 uv%d;\n", t);
++    if (info->fog) append(w, "float4 fog;\n");
++    if (info->light_map) append(w, "float2 lightMap;\n");
++    for (int i = 0; i < info->features.num_inputs; ++i) append(w, "%s input%d;\n", input_type(info->alpha), i + 1);
++    append(w, "};\nvertex VOut coopdx_vertex(VIn in [[stage_in]]) { VOut o; o.position=in.position;\n");
++    for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) append(w, "o.uv%d=in.uv%d;\n", t, t);
++    if (info->fog) append(w, "o.fog=in.fog;\n");
++    if (info->light_map) append(w, "o.lightMap=in.lightMap;\n");
++    for (int i = 0; i < info->features.num_inputs; ++i) append(w, "o.input%d=in.input%d;\n", i + 1, i + 1);
++    append(w, "return o; }\n");
++    (void)attribute;
++}
++
++bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
++                                   char *source, size_t source_size,
++                                   struct GfxMetalCoopDXShaderInfo *info) {
++    if (!combiner || !source || !info || source_size < 2) return false;
++    memset(info, 0, sizeof(*info));
++    source[0] = '\0';
++    gfx_cc_get_features((struct ColorCombiner *)combiner, &info->features);
++    info->alpha = combiner->cm.use_alpha;
++    info->fog = combiner->cm.use_fog;
++    info->texture_edge = combiner->cm.texture_edge;
++    info->two_cycle = combiner->cm.use_2cycle;
++    info->light_map = combiner->cm.light_map;
++
++    uint32_t attribute = 1;
++    for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) attribute++;
++    if (info->fog) attribute++;
++    if (info->light_map) attribute++;
++    attribute += (uint32_t)info->features.num_inputs;
++    info->attribute_count = (uint8_t)attribute;
++    uint32_t floats = 4;
++    for (int t = 0; t < 2; ++t) if (info->features.used_textures[t]) floats += 2;
++    if (info->fog) floats += 4;
++    if (info->light_map) floats += 2;
++    floats += (uint32_t)info->features.num_inputs * (info->alpha ? 4u : 3u);
++    if (floats > UINT16_MAX / sizeof(float)) return false;
++    info->vertex_stride = (uint16_t)(floats * sizeof(float));
++
++    struct Writer w = { source, source_size, 0, true };
++    emit_vertex(&w, info);
++    append(&w, "fragment float4 coopdx_fragment(VOut in [[stage_in]], texture2d<float> tex0 [[texture(0)]], texture2d<float> tex1 [[texture(1)]], sampler samp0 [[sampler(0)]], sampler samp1 [[sampler(1)]], constant float3 &lightMapColor [[buffer(0)]], constant float &frameCount [[buffer(1)]]) {\n");
++    if (info->features.used_textures[0]) append(&w, "float4 texel0=tex0.sample(samp0,in.uv0);\n");
++    if (info->features.used_textures[1]) {
++        append(&w, "float2 uv1=%s; float4 texel1=tex1.sample(samp1,uv1);\n",
++               info->light_map ? "in.lightMap" : "in.uv1");
++        if (info->light_map) {
++            if (info->features.used_textures[0]) append(&w, "texel0.rgb*=lightMapColor;\n");
++            append(&w, "texel1.rgb=texel1.rgb*texel1.rgb+texel1.rgb;\n");
++        }
++    }
++    if (info->features.do_noise) append(&w, "float noise=fract(sin(dot(floor(in.position.xy)+float2(frameCount,frameCount*0.37),float2(12.9898,78.233)))*43758.5453);\n");
++    append(&w, "float4 combined=float4(0.0);\n");
++    int cycles = info->two_cycle ? 2 : 1;
++    for (int cycle = 0; cycle < cycles; ++cycle) {
++        const uint8_t *commands = &combiner->shader_commands[cycle * 8];
++        append(&w, "combined=float4(");
++        emit_formula(&w, commands, true, info->alpha);
++        append(&w, ",");
++        if (info->alpha) emit_formula(&w, commands, false, true);
++        else append(&w, "1.0");
++        append(&w, ");\n");
++    }
++    if (info->texture_edge && info->alpha) append(&w, "if(combined.a>0.3) combined.a=1.0; else discard_fragment();\n");
++    if (info->fog) append(&w, "combined.rgb=mix(combined.rgb,in.fog.rgb,in.fog.a);\n");
++    if (!info->alpha) append(&w, "combined.a=1.0;\n");
++    append(&w, "return combined; }\n");
++    return w.valid;
++}
+diff --git a/src/pc/gfx/gfx_metal_coopdx_shader.h b/src/pc/gfx/gfx_metal_coopdx_shader.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..edf9b13e29d1fff6bb72ecd4f4a34eb02282c7a5
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx_shader.h
+@@ -0,0 +1,35 @@
++#ifndef GFX_METAL_COOPDX_SHADER_H
++#define GFX_METAL_COOPDX_SHADER_H
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#include "gfx_cc.h"
++
++#define GFX_METAL_COOPDX_KEY_SIZE 52
++
++struct GfxMetalCoopDXShaderKey {
++    uint8_t bytes[GFX_METAL_COOPDX_KEY_SIZE];
++};
++
++struct GfxMetalCoopDXShaderInfo {
++    struct CCFeatures features;
++    bool alpha;
++    bool fog;
++    bool texture_edge;
++    bool two_cycle;
++    bool light_map;
++    uint8_t attribute_count;
++    uint16_t vertex_stride;
++};
++
++bool gfx_metal_coopdx_shader_key(const struct ColorCombiner *combiner,
++                                 struct GfxMetalCoopDXShaderKey *key);
++bool gfx_metal_coopdx_shader_key_equal(const struct GfxMetalCoopDXShaderKey *a,
++                                       const struct GfxMetalCoopDXShaderKey *b);
++bool gfx_metal_coopdx_build_shader(const struct ColorCombiner *combiner,
++                                   char *source, size_t source_size,
++                                   struct GfxMetalCoopDXShaderInfo *info);
++
++#endif
+diff --git a/tests/gfx_metal_coopdx_shader_test.c b/tests/gfx_metal_coopdx_shader_test.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..52144aafd78b78dfb34f25418a40a6c2c9c314a9
+--- /dev/null
++++ b/tests/gfx_metal_coopdx_shader_test.c
+@@ -0,0 +1,64 @@
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "pc/gfx/gfx_metal_coopdx_shader.h"
++#include "pc/gfx/gfx_pc.h"
++
++void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1,
++                           uint32_t rgb2, uint32_t alpha2, uint32_t flags) {
++    (void)rgb1; (void)alpha1; (void)rgb2; (void)alpha2; (void)flags;
++}
++
++int main(void) {
++    struct ColorCombiner cc = { 0 };
++    cc.cm.use_alpha = true;
++    cc.cm.use_fog = true;
++    cc.cm.texture_edge = true;
++    cc.cm.use_2cycle = true;
++    cc.cm.light_map = true;
++    cc.shader_commands[0] = SHADER_TEXEL0;
++    cc.shader_commands[1] = SHADER_INPUT_1;
++    cc.shader_commands[2] = SHADER_INPUT_2;
++    cc.shader_commands[3] = SHADER_INPUT_3;
++    cc.shader_commands[4] = SHADER_TEXEL0;
++    cc.shader_commands[5] = SHADER_INPUT_1;
++    cc.shader_commands[6] = SHADER_INPUT_2;
++    cc.shader_commands[7] = SHADER_INPUT_3;
++    cc.shader_commands[8] = SHADER_TEXEL1;
++    cc.shader_commands[9] = SHADER_0;
++    cc.shader_commands[10] = SHADER_1;
++    cc.shader_commands[11] = SHADER_COMBINED;
++    cc.shader_commands[12] = SHADER_TEXEL1;
++    cc.shader_commands[13] = SHADER_0;
++    cc.shader_commands[14] = SHADER_1;
++    cc.shader_commands[15] = SHADER_COMBINED;
++
++    struct GfxMetalCoopDXShaderInfo info;
++    char source[8192];
++    assert(gfx_metal_coopdx_build_shader(&cc, source, sizeof(source), &info));
++    assert(info.alpha && info.fog && info.texture_edge && info.two_cycle && info.light_map);
++    assert(info.features.num_inputs == 3);
++    assert(info.features.used_textures[0] && info.features.used_textures[1]);
++    assert(info.vertex_stride == (4u + 2u + 2u + 4u + 2u + 3u * 4u) * sizeof(float));
++    assert(info.attribute_count == 1u + 2u + 1u + 1u + 3u);
++    assert(strstr(source, "vertex VOut coopdx_vertex") != NULL);
++    assert(strstr(source, "fragment float4 coopdx_fragment") != NULL);
++    assert(strstr(source, "(texel0.rgb - in.input1.rgb) * in.input2.rgb + in.input3.rgb") != NULL);
++    assert(strstr(source, "combined.rgb") != NULL);
++    assert(strstr(source, "discard_fragment()") != NULL);
++    assert(strstr(source, "mix(combined.rgb,in.fog.rgb,in.fog.a)") != NULL);
++
++    struct GfxMetalCoopDXShaderKey key_a, key_b;
++    assert(gfx_metal_coopdx_shader_key(&cc, &key_a));
++    assert(gfx_metal_coopdx_shader_key(&cc, &key_b));
++    assert(gfx_metal_coopdx_shader_key_equal(&key_a, &key_b));
++    cc.shader_commands[0] = SHADER_TEXEL1;
++    assert(gfx_metal_coopdx_shader_key(&cc, &key_b));
++    assert(!gfx_metal_coopdx_shader_key_equal(&key_a, &key_b));
++
++    char tiny[16];
++    assert(!gfx_metal_coopdx_build_shader(&cc, tiny, sizeof(tiny), &info));
++    puts("CoopDX Metal combiner adapter tests: passed");
++    return 0;
++}
+diff --git a/tests/run_gfx_metal_coopdx_shader_test.sh b/tests/run_gfx_metal_coopdx_shader_test.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..8c04b73c797f9764cc1cbf74bedd4ba72e9db6ea
+--- /dev/null
++++ b/tests/run_gfx_metal_coopdx_shader_test.sh
+@@ -0,0 +1,25 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++OUT="$(mktemp /tmp/gfx-metal-coopdx-shader-test.XXXXXX)"
++trap 'rm -f "$OUT"' EXIT
++
++FLAGS=(-std=c11 -Wall -Wextra -Werror -DNON_MATCHING=1 -DAVOID_UB=1
++       -DVERSION_US=1 -DF3DEX_GBI_2E=1 -DF3DEX_GBI_SHARED=1 -D_LANGUAGE_C
++       -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src")
++if [[ "${SANITIZE:-0}" == "1" ]]; then
++    FLAGS+=(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
++fi
++
++"${CC:-cc}" "${FLAGS[@]}" \
++    "$ROOT/tests/gfx_metal_coopdx_shader_test.c" \
++    "$ROOT/src/pc/gfx/gfx_metal_coopdx_shader.c" \
++    "$ROOT/src/pc/gfx/gfx_cc.c" \
++    -o "$OUT"
++
++if [[ "${SANITIZE:-0}" == "1" ]]; then
++    ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" "$OUT"
++else
++    "$OUT"
++fi
+-- 
+2.56.1
+
