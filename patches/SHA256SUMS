@@ -27,3 +27,4 @@ f9c2354f616fe523d4c28fcf57f8ad93c7a72777f13dc2b88dd1a1f7ef27f3e9  0021-Record-fi
 302a0d27e08a7ab44b582b62e6752dae63820ec9c72ae8be8a0c0ba382c70a2b  0027-Record-Mission-09-clean-build-and-Apple-validation.patch
 529f50eb2721615cc057660a2369e1fe954e99755288f3365d47f8affcc64171  0028-Fix-Lua-include-path-in-Metal-host-test.patch
 6c29c57c9526160acee8c101a7d38a84705b62f1adab4214b90bd7f4b7e431fa  0029-Use-pkg-config-SDL2-flags-in-Metal-test.patch
+ed5856ac4c87cdbea9d6956349158602172267b00eb9d7038aea686e8983d08d  0030-Record-Mission-10-CI-recovery-checkpoint.patch

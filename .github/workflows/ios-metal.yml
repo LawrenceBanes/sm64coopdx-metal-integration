@@ -26,7 +26,6 @@ jobs:
           SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh
 
   ios-arm64:
-    needs: host
     runs-on: macos-26
     timeout-minutes: 90
     steps:

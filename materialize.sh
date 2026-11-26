@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPSTREAM_URL="https://github.com/LeoManrique/sm64coopdx-ios.git"
 BASE_COMMIT="6bfcfede7a5c1af400daa269931a9ae13ed157ad"
-EXPECTED_TREE="f9722948b63a5263014a0d2eba973fc6240baf13"
+EXPECTED_TREE="bc7acad6eaf9d1b185c32ee75b953469bba14063"
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 DESTINATION" >&2

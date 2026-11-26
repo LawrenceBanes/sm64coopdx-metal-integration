@@ -1,0 +1,54 @@
+From 706868ef973c37d5428f2ff99b2bb2866d73524d Mon Sep 17 00:00:00 2001
+From: SHITBOX LABZ Mission 10 <mission10@localhost>
+Date: Thu, 26 Nov 2026 11:31:05 -0600
+Subject: [PATCH] Document Mission 10 CI recovery checkpoint
+
+---
+ HANDOFF.md             |  8 ++++++++
+ MISSION_10_PROGRESS.md | 18 ++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+ create mode 100644 MISSION_10_PROGRESS.md
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 152aabcb..570a7f67 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -42,3 +42,11 @@ The GitHub CLI is authenticated for `LawrenceBanes`. The full-source checkout's
+ Latest full-source implementation checkpoint is `570dc63416474837cbc1dbbe1a8ef012beeb1507` (tree `7b087d0ee6089736e6ab55ebd1b3622c9ca8989f`); Mission 05 handoff commit is `2af335c8b81ca7951b4c96c02235ac5dac737d48`. Host `make -j2`, adapter/combiner tests, and ASan/UBSan tests pass. The exact private overlay materialization passed a clean Linux link plus focused and sanitized tests. Metal now uses three in-flight vertex/depth slots with non-overlapping, bounded vertex slices and correctly clipped top-left-origin scissors. These fixes are source-reviewed and host-logic-tested, not full-app Apple-compiled or GPU-verified.
+ 
+ Mission 05 created public source-only compiler repository `https://github.com/LawrenceBanes/sm64coopdx-metal-build` at `7640f3b926a8e69f08bca1c93b011f49db4839b2`. Workflow `45738609822` passed Apple's MSL compiler for four real adapter-generated iPhoneOS shader fixtures (Xcode 16.4 build 16F6, iPhoneOS SDK 18.5, macOS 15.8.2 ARM64). Artifact `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822/artifacts/15080650158`, SHA-256 `e361ea24ccacb3df36d2a9fcde15cb29a82599e92fd7a083c56a1056aa558133`. This validates only those shader sources. The full private overlay workflow `45738244093` was rejected before runner steps due GitHub account billing/spending-limit restrictions; the iOS job was skipped. No full application Apple compile, arm64 link, IPA, or device test exists. See `MISSION_05_PROGRESS.md` for exact status and next steps.
++
++## Mission 10 automated CI bring-up checkpoint — 2026-11-26
++
++The private overlay branch `mission-09-final-assembly` was last independently verified on GitHub at source commit `d0379403aa094e6808fa581dc91dc2b10fe8cd98` (materialized integration tree `b51f7ec073bc8278dcf5b879a0ad772a4c20fdc6`). The associated manual Apple validation run `45864893829` built and passed the Linux job, but the macOS job was gated on Linux and failed before the iPhoneOS application compile: the standalone generated-MSL test included `data/dynos.h`, whose SDL header include was not found. The full IPA step was skipped.
++
++Overlay patch 29 fixes SDL2 header discovery by obtaining compiler flags from `pkg-config sdl2` and retains patch 28's Lua include path. It was validated locally in the exact 29-patch materialization: Linux `make -j2` completed, and the Metal shader adapter, SDL Metal layer lifecycle, texture-cache rewind, and touchscreen-math tests passed normally and under ASan/UBSan (leak detection disabled in this sandbox). The materialized tree is `f9722948b63a5263014a0d2eba973fc6240baf13`. These results do not establish an Apple compile or IPA.
++
++The workflow now runs `ios-arm64` independently of the host job. This keeps Linux regression failures visible without suppressing the separate Apple toolchain result. The next checkpoint must publish the updated overlay and dispatch one manual workflow. Until a successful macOS build and IPA validation are recorded, full iPhoneOS compilation and IPA packaging remain unverified.
+diff --git a/MISSION_10_PROGRESS.md b/MISSION_10_PROGRESS.md
+new file mode 100644
+index 00000000..b5b106aa
+--- /dev/null
++++ b/MISSION_10_PROGRESS.md
+@@ -0,0 +1,18 @@
++# Mission 10 Progress — Automated CI Bring-Up
++
++## 2026-11-26 checkpoint
++
++- Remote overlay branch was verified at `d0379403aa094e6808fa581dc91dc2b10fe8cd98` before this change; its materialized tree was `b51f7ec073bc8278dcf5b879a0ad772a4c20fdc6`.
++- Workflow run `45864893829`: Linux host job passed. macOS `ios-arm64` reached generated MSL validation but failed because `SDL2/SDL.h` was not on the compiler include path through `data/dynos.h`; IPA packaging was skipped. The root cause was not a game-renderer error.
++- Patch 29 obtains SDL2 compiler flags using `pkg-config --cflags sdl2`. It preserves patch 28's Lua include path. Exact replay of patches 1–29 yields tree `f9722948b63a5263014a0d2eba973fc6240baf13`.
++- On that exact materialized source, `make -j2` passed. Four focused tests passed normally and under ASan/UBSan (sandbox leak detection disabled): `run_gfx_metal_coopdx_shader_test.sh`, `run_gfx_sdl_metal_layer_test.sh`, `run_gfx_texture_cache_rewind_test.sh`, and `run_touchscreen_controls_math_test.sh`.
++- Workflow change: the macOS iPhoneOS job is independent of the Linux host job; both jobs remain present and continue to report their own status.
++- Not yet verified: publishing this checkpoint, a subsequent Apple runner start, iPhoneOS app compilation/linking, IPA creation, archive validation, or physical-device behavior.
++
++## Next steps
++
++1. Update the overlay patch/checksum series and expected materialized tree for this documentation checkpoint.
++2. Validate clean patch replay, shell/YAML syntax, Linux build/tests.
++3. Publish without force and verify branch HEAD.
++4. Attempt one manual `ios-metal.yml` dispatch; if the current session cannot reach GitHub, preserve the commit and report that exact external blocker rather than claiming a run.
++5. On successful Apple run, inspect full logs and IPA evidence before reporting build success.
+-- 
+2.56.1
+
