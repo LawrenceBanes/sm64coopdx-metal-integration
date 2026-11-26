@@ -1,0 +1,29 @@
+From 7859171359406cc0e51a3a081b56497cfad61243 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:22:17 -0600
+Subject: [PATCH] Clarify final Mission 06 source checkpoints
+
+---
+ MISSION_06_PROGRESS.md | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/MISSION_06_PROGRESS.md b/MISSION_06_PROGRESS.md
+index e6374838..33501d1e 100644
+--- a/MISSION_06_PROGRESS.md
++++ b/MISSION_06_PROGRESS.md
+@@ -8,9 +8,9 @@
+ 
+ - Integration source: `/home/larry/Projects/sm64coopdx-metal`
+ - Integration branch: `mission-03-04-metal-first-light-parity`
+-- Latest local integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`); current branch HEAD is `712b6edc` (documentation checkpoint). This branch has only the `upstream` remote; do not push it to upstream.
+-- Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`, commit `7bbb7c6` (`Record Mission 06 Apple validation in private overlay`). It includes Apple SDK/ARC fixes and the materialization integrity update. Push triggers are disabled in its private workflow, so this update did not start a private Actions job.
+-- `materialize.sh /tmp/mission06-materialized-final` passed and verified source tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations.
++- Latest local integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`). The local branch contains the Mission 06 validation records through `f4274ebf`; it has only the `upstream` remote, which must not be used for publishing.
++- Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`. Source checkpoint `7bbb7c6` added the verified implementation; latest overlay commit `de511e7` records the final materialization hash. Push triggers are disabled in the private workflow, so no private Actions job ran.
++- `materialize.sh /tmp/mission06-materialized-final` passed and verified implementation tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations. The final overlay adds documentation only and verifies tree `c37fe3d664b2c74f19c988bc62c4c606218b61f7`.
+ - Public, source-only component harness: [LawrenceBanes/sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
+ - Latest public harness commit: `0c426ac76bd3a594f2aa47221e51c257164b80dd` (`Include the linked ARM64 Metal harness in CI artifacts`).
+ - Verification run for corrected artifact path: [45746850842](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842) — passed.
+-- 
+2.56.1
+
