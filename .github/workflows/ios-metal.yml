@@ -1,8 +1,6 @@
 name: CoopDX Metal iOS validation
 
 on:
-  push:
-    branches: [mission-03-04-metal-first-light-parity]
   workflow_dispatch:
 
 permissions:

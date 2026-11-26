@@ -1,0 +1,589 @@
+From 63b5c993426b7408ab40d621799715354b5f31d2 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:12:36 -0600
+Subject: [PATCH] Sync mission 06 integration source and validation records
+
+---
+ CMakeLists.txt                         |  1 +
+ HANDOFF.md                             |  8 ++-
+ MISSION_03_04_PROGRESS.md              | 13 +++--
+ MISSION_05_PROGRESS.md                 | 52 +++++++++++++++++++
+ MISSION_06_PROGRESS.md                 | 69 ++++++++++++++++++++++++++
+ RENDERER_PARITY.md                     | 10 ++--
+ VALIDATION.md                          | 17 +++++++
+ src/pc/gfx/gfx_metal_coopdx.m          |  8 +--
+ src/pc/gfx/gfx_sdl.c                   | 28 +++++------
+ src/pc/gfx/gfx_sdl_metal_layer.c       | 30 +++++++++++
+ src/pc/gfx/gfx_sdl_metal_layer.h       | 13 +++++
+ tests/gfx_sdl_metal_layer_test.c       | 54 ++++++++++++++++++++
+ tests/run_gfx_sdl_metal_layer_test.sh  | 10 ++++
+ tests/sdl_metal_stubs/SDL2/SDL.h       |  5 ++
+ tests/sdl_metal_stubs/SDL2/SDL_metal.h |  9 ++++
+ 15 files changed, 297 insertions(+), 30 deletions(-)
+ create mode 100644 MISSION_05_PROGRESS.md
+ create mode 100644 MISSION_06_PROGRESS.md
+ create mode 100644 src/pc/gfx/gfx_sdl_metal_layer.c
+ create mode 100644 src/pc/gfx/gfx_sdl_metal_layer.h
+ create mode 100644 tests/gfx_sdl_metal_layer_test.c
+ create mode 100755 tests/run_gfx_sdl_metal_layer_test.sh
+ create mode 100644 tests/sdl_metal_stubs/SDL2/SDL.h
+ create mode 100644 tests/sdl_metal_stubs/SDL2/SDL_metal.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index bd90766e..db41b26b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -213,6 +213,7 @@ include_directories(${GAME_ROOT}/lib/lua/include)
+ set(IOS_OBJC_FILES
+     ${GAME_ROOT}/src/pc/platform_ios.m
+     ${GAME_ROOT}/src/pc/gfx/gfx_metal_coopdx.m
++    ${GAME_ROOT}/src/pc/gfx/gfx_sdl_metal_layer.c
+ )
+ 
+ set_source_files_properties(${GAME_ROOT}/src/pc/gfx/gfx_metal_coopdx.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 6a95b998..34a5ea8f 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -1,5 +1,9 @@
+ # CoopDX Metal Integration Handoff
+ 
++## Current Mission 06 status
++
++Mission 06 is **partial**. Public Apple CI now compiles and links the independently authored Metal adapter, SDL bridge, pinned SDL2, and generated MSL fixtures against iPhoneOS SDK using stub game interfaces. It has not built the complete CoopDX app or produced an IPA. The full source has no identified redistribution license, private GitHub Actions are blocked by the account spending restriction, and no Mac host is available in the current Tailscale/local environment. See [MISSION_06_PROGRESS.md](MISSION_06_PROGRESS.md) for current commit, run, exact tests, and next steps.
++
+ Project: `/home/larry/Projects/sm64coopdx-metal`  
+ Branch: `mission-03-04-metal-first-light-parity`
+ Starting commit: `34e638ec4a9098dda878998a46333ef21fea731c`  
+@@ -15,4 +19,6 @@ Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedica
+ 
+ The GitHub CLI is authenticated for `LawrenceBanes`. The full-source checkout's only remote is `upstream` (`LeoManrique/sm64coopdx-ios`) and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied and full-source publication is on hold pending a compatible distribution basis. A private patch-only overlay now exists at `https://github.com/LawrenceBanes/sm64coopdx-metal-integration` and fetches the pinned public source at build time.
+ 
+-Latest local source checkpoint is `1d2498f99b1235f0df4f47b7034ae04192d28e40` (tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`). Host `make -j2`, adapter/combiner tests, and ASan/UBSan tests pass. The exact private overlay materialization passed a clean Linux link plus focused and sanitized tests. Metal now uses three in-flight vertex/depth slots with non-overlapping, bounded vertex slices and correctly clipped top-left-origin scissors. These are source-reviewed and host-logic-tested fixes, not Apple-compiled or GPU-verified behavior. Overlay workflows `45730350990`, `45730896116`, `45731814680`, and `45732668194` were rejected before runner steps because GitHub reports account payment/spending-limit restrictions; Apple compilation and IPA remain blocked. Continue parity work and rerun after the account-level runner block is cleared.
++Latest full-source implementation checkpoint is `570dc63416474837cbc1dbbe1a8ef012beeb1507` (tree `7b087d0ee6089736e6ab55ebd1b3622c9ca8989f`); Mission 05 handoff commit is `2af335c8b81ca7951b4c96c02235ac5dac737d48`. Host `make -j2`, adapter/combiner tests, and ASan/UBSan tests pass. The exact private overlay materialization passed a clean Linux link plus focused and sanitized tests. Metal now uses three in-flight vertex/depth slots with non-overlapping, bounded vertex slices and correctly clipped top-left-origin scissors. These fixes are source-reviewed and host-logic-tested, not full-app Apple-compiled or GPU-verified.
++
++Mission 05 created public source-only compiler repository `https://github.com/LawrenceBanes/sm64coopdx-metal-build` at `7640f3b926a8e69f08bca1c93b011f49db4839b2`. Workflow `45738609822` passed Apple's MSL compiler for four real adapter-generated iPhoneOS shader fixtures (Xcode 16.4 build 16F6, iPhoneOS SDK 18.5, macOS 15.8.2 ARM64). Artifact `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822/artifacts/15080650158`, SHA-256 `e361ea24ccacb3df36d2a9fcde15cb29a82599e92fd7a083c56a1056aa558133`. This validates only those shader sources. The full private overlay workflow `45738244093` was rejected before runner steps due GitHub account billing/spending-limit restrictions; the iOS job was skipped. No full application Apple compile, arm64 link, IPA, or device test exists. See `MISSION_05_PROGRESS.md` for exact status and next steps.
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+index 7ea28b53..378e0ee2 100644
+--- a/MISSION_03_04_PROGRESS.md
++++ b/MISSION_03_04_PROGRESS.md
+@@ -41,7 +41,10 @@
+ - Follow-up overlay workflow `45730896116` — same account-level runner allocation rejection; host job failed with zero steps and iOS job was skipped. GitHub check annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." No billing action was attempted.
+ - Overlay workflows `45731814680` and `45732668194` — each rejected before any job steps with the same billing/spending-limit annotation; iOS job skipped. These runs validate no source and are not compiler failures.
+ - Exact latest overlay materialization: `./materialize.sh /tmp/coopdx-m03-materialize-1d249` recreated tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`; `tests/run_gfx_metal_coopdx_shader_test.sh`, its ASan/UBSan variant, and a clean `make -j2` all passed from that reconstructed tree. The linked host executable was 90,025,768 bytes. No ROM was uploaded.
+-- Apple SDK compilation, MSL validation, iOS arm64 link, IPA packaging, and device runtime — not run. `xcodebuild`/`xcrun` are absent.
++- Mission 05 public source-only MSL validation: `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822` passed on `macos-15-arm64` (macOS 15.8.2), Xcode 16.4 build 16F6, iPhoneOS SDK 18.5. It compiled the four actual adapter-generated fixtures: textureless, texture tile 0, texture tile 1, and two-cycle fog/light-map/world flags. `.air` artifact: `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822/artifacts/15080650158` (22,327 bytes; artifact ZIP SHA-256 `e361ea24ccacb3df36d2a9fcde15cb29a82599e92fd7a083c56a1056aa558133`). This verifies Apple's MSL compiler accepts those shader permutations only; it does not compile the Objective-C backend or application.
++- A clean download of the public artifact reproduced each compiled `.air` file's hash from CI's `SHA256SUMS.txt`. `texture0.air`: `cd074cbc74356930d30b504727db47dd14cc12c2829260237f276d7ba877fb48`; `texture1.air`: `12e7dcfcb57a9fad96ac8d6dd92a64067aac5cf29102ecfe8047b706059685b1`; `textureless.air`: `e3ee29d9e13a38f7c8854f9a4079db4accc9dfcae0b6f60829de5024ed38fad7`; `two_cycle_fog_lightmap.air`: `1104756ecc4e1eb86e1e583ce2fd4562a4a34137fe303f396534f331140860e1`.
++- Full-project private overlay workflow `45738244093` remains blocked before runner steps by GitHub account billing/spending-limit status; the host job has zero steps and `ios-arm64` is skipped. It is not a compiler failure and provides no Apple application build evidence.
++- iOS Objective-C/Objective-C++ backend compilation, full iOS ARM64 linking, IPA packaging, and device runtime — not verified. Local Linux environment has no `xcodebuild`/`xcrun`.
+ 
+ ## Active blockers
+ 
+@@ -52,13 +55,13 @@
+ 
+ ## Next actions
+ 
+-1. Carry the bounded frame-resource fix into the private patch overlay and validate its exact materialized tree.
+-2. Rerun the private overlay workflow after GitHub Actions is permitted to allocate runners.
+-3. Fix any actionable host, MSL, Apple compile/link, or IPA validation failures revealed by that run; continue renderer parity with host tests and preserve OpenGL ES.
++1. Have the account owner resolve GitHub Actions billing/spending-limit status, then rerun private overlay workflow `mission-03-04-metal-first-light-parity` to compile and link the full iOS app.
++2. If full iOS compilation succeeds, validate IPA assembly and dependencies; only then publish through the private build repository.
++3. Use the new public Apple MSL fixture workflow as narrow shader-generator regression coverage. Continue renderer parity with host tests and preserve OpenGL ES.
+ 
+ ## Evidence categories
+ 
+ - **Host tested:** portable combiner generator and Linux game build only.
+-- **Apple compiled:** no.
++- **Apple compiled:** four generated MSL fixture permutations only (public run 45738609822); application Objective-C/Objective-C++ and iOS ARM64 target remain uncompiled.
+ - **IPA packaged:** no.
+ - **Device verified:** no.
+diff --git a/MISSION_05_PROGRESS.md b/MISSION_05_PROGRESS.md
+new file mode 100644
+index 00000000..a0cdd76e
+--- /dev/null
++++ b/MISSION_05_PROGRESS.md
+@@ -0,0 +1,52 @@
++# Mission 05 Progress — Metal First Light
++
++## Current source checkpoint
++
++- Project: `/home/larry/Projects/sm64coopdx-metal`
++- Branch: `mission-03-04-metal-first-light-parity`
++- Latest implementation checkpoint: `570dc63416474837cbc1dbbe1a8ef012beeb1507`.
++- Handoff/documentation commit: `2af335c8b81ca7951b4c96c02235ac5dac737d48`.
++- Public validation repository's run record was committed separately at `67cc450b8a491a0e6b0595aa2ceb8ad2078820cd`.
++- Mission 81/original Metal, Mission 82, and unrelated worktrees were not modified.
++
++## Rights-safe CI result
++
++The CoopDX iOS source and previous Metal repository have no identified root license grant. No full source mirror was published and no code from the earlier Metal repository was copied. To obtain useful Apple validation without publishing the complete game source, a public source-only repository was created:
++
++- Repository: [sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
++- Commit: `7640f3b926a8e69f08bca1c93b011f49db4839b2`
++- Contents: four generated MSL fixtures, Apple compiler workflow, README, MIT license, and gitignore. No CoopDX engine, ROM, proprietary assets, renderer backend implementation, or app binary.
++- Workflow: [run 45738609822](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822) — **passed**.
++- Public validation repository current commit: `67cc450b8a491a0e6b0595aa2ceb8ad2078820cd` (README records the verified run and artifact).
++- Runner/toolchain: macOS 15.8.2 ARM64, Xcode 16.4 build 16F6, iPhoneOS SDK 18.5.
++- Apple `metal -c` compiled actual adapter-generated fixtures covering textureless, texture tile 0, texture tile 1, and two-cycle fog/light-map/world color flags.
++- `.air` artifact: [download](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822/artifacts/15080650158); 22,327 bytes; archive SHA-256 `e361ea24ccacb3df36d2a9fcde15cb29a82599e92fd7a083c56a1056aa558133`.
++- The artifact was downloaded and extracted; all four `.air` hashes matched the CI `SHA256SUMS.txt`.
++
++This proves only that Apple's compiler accepts these shader fixtures. It does not validate the Objective-C Metal backend, SDL integration, complete iOS app, linking, pipeline creation, GPU execution, or gameplay rendering.
++
++## Full app workflow blocker
++
++Private patch overlay: [sm64coopdx-metal-integration](https://github.com/LawrenceBanes/sm64coopdx-metal-integration). The latest full-project workflow, [run 45738244093](https://github.com/LawrenceBanes/sm64coopdx-metal-integration/actions/runs/45738244093), failed before runner allocation. The host job had zero steps; the iOS job was skipped. GitHub's annotation reports: “The job was not started because recent account payments have failed or your spending limit needs to be increased.” This is an account-level infrastructure block, not a source/compiler error. No billing or spending-limit changes were attempted. Do not repeat runs until the account-side block is cleared.
++
++No complete Apple application compile, iOS ARM64 link, IPA, or physical-device test is available. Do not publish a shader-only artifact as an IPA or call it an app build.
++
++## Validation carried forward
++
++Mission 06 follow-up supersedes the Apple-validation status below: the public harness now compiles and stub-links the Objective-C Metal backend, SDL bridge, pinned SDL2, and generated MSL. See `MISSION_06_PROGRESS.md` for run `45746850842` and its verified component artifact. This does not supersede the remaining full-app, IPA, or device-validation blockers.
++
++- Linux `make -j2`: passed on the integration tree.
++- `tests/run_gfx_metal_coopdx_shader_test.sh`: passed.
++- `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh`: passed with ASan/UBSan.
++- Exact materialized patch-overlay tree `7b087d0ee6089736e6ab55ebd1b3622c9ca8989f`: clean Linux link and focused/sanitizer tests passed.
++- `make test`: unavailable because `mupen64plus` is not installed.
++- Full iOS Objective-C compile, app link, IPA structure, and device runtime: **not verified**.
++
++See `VALIDATION.md`, `RENDERER_PARITY.md`, and `METAL_INTEGRATION_PLAN.md` for detailed history.
++
++## Next steps
++
++1. Ask the account owner to resolve the GitHub Actions billing/spending-limit block; then dispatch the existing private overlay iOS workflow without changing the source branch.
++2. Fix actual Xcode/MSL/link/package errors reported by that run; preserve OpenGL ES and keep the full-source tree private until its redistribution rights are established.
++3. After a complete iOS ARM64 build links, produce and inspect a LiveContainer IPA through the authorized private-assets workflow. Keep ROM assets local.
++4. Have the user test Metal selection, initialization/fallback, vanilla geometry/textures/HUD, and one Lua/DynOS mod on the physical iPhone. CI cannot establish those runtime results.
+diff --git a/MISSION_06_PROGRESS.md b/MISSION_06_PROGRESS.md
+new file mode 100644
+index 00000000..054feb91
+--- /dev/null
++++ b/MISSION_06_PROGRESS.md
+@@ -0,0 +1,69 @@
++# Mission 06 Progress — Zero-Dollar Metal
++
++## Current disposition
++
++**Partial.** The rights-safe public Apple harness has compiled and linked the Metal backend components against Apple's iPhoneOS SDK and a stub CoopDX contract. The complete CoopDX application has not been Apple-compiled or linked, no IPA exists, and there is no iPhone result.
++
++## Repositories and checkpoints
++
++- Integration source: `/home/larry/Projects/sm64coopdx-metal`
++- Integration branch: `mission-03-04-metal-first-light-parity`
++- Latest local integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`); current branch HEAD is `712b6edc` (documentation checkpoint). This branch has only the `upstream` remote; do not push it to upstream.
++- Private overlay: `/home/larry/Projects/sm64coopdx-metal-overlay`, local commit `a67c956` contains the Apple SDK and ARC fixes and materializes the validated source tree. It is one commit ahead of its private GitHub branch; it was not pushed because doing so would trigger the private Actions workflow while the billing restriction remains.
++- Public, source-only component harness: [LawrenceBanes/sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
++- Latest public harness commit: `0c426ac76bd3a594f2aa47221e51c257164b80dd` (`Include the linked ARM64 Metal harness in CI artifacts`).
++- Verification run for corrected artifact path: [45746850842](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842) — passed.
++- Artifact: [iphoneos-metal-components-0c426ac76bd3a594f2aa47221e51c257164b80dd](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842/artifacts/15082744213), 1,455,487 bytes, 30-day retention. Every downloaded file matched `SHA256SUMS.txt`; the ARM64 test dylib is 2,020,720 bytes, SHA-256 `68d432761dac1ea880f5722fed2a18b496b1dd5fc99d987236ac879bad9bb6f9`.
++- The previous run [45746603843](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746603843) passed its build steps, but its artifact omitted the test dylib due to an incorrect upload path. Commit `0c426ac` fixed the path; the successful next run includes and verifies the dylib.
++
++## Evidence achieved
++
++Earlier public run [45738609822](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822) compiled four adapter-generated MSL fixtures with Apple's Metal compiler (Xcode 16.4 build 16F6, macOS 15.8.2 ARM64, iPhoneOS SDK 18.5).
++
++On public run `45746850842`, the standard macOS ARM64 runner successfully:
++
++- Built pinned official SDL 2.32.10 as an iPhoneOS ARM64 static library.
++- Compiled the Objective-C Metal backend, C adapter, and SDL Metal layer bridge against the iPhoneOS SDK.
++- Linked a stub-contract test dylib against Apple's frameworks and SDL2.
++- Generated and compiled eight representative MSL variants (including alpha, DynOS/custom material, HUD alpha, character texture replacement, runtime texture rebind, and two-cycle fog/light-map).
++- Ran SDL Metal layer lifecycle tests, including the sanitizer invocation.
++
++This validates those independently published components and their stub contract only. The test dylib is a linked harness, not the game application. It does not establish ABI compatibility with the complete game, full application linking, GPU execution, rendering parity, or LiveContainer behavior.
++
++## Local validation
++
++On the integration tree, these passed after the Apple-diagnostic fixes:
++
++- `make -j2`
++- `tests/run_gfx_metal_coopdx_shader_test.sh`
++- `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh`
++- `tests/run_gfx_sdl_metal_layer_test.sh`
++- `SANITIZE=1 CC=clang tests/run_gfx_sdl_metal_layer_test.sh`
++- `git diff --check`
++
++The Apple diagnostics found and corrected the Metal sampler enum spelling, Objective-C ARC bridging, scissor-rectangle construction, Objective-C `id` shadowing by a texture-ID local, and test-link dependencies for SDL's iOS static library. The Metal object cache now releases ARC-owned pipeline references by assigning `nil`, rather than clearing Objective-C objects with `memset`.
++
++The public harness originally tried to fetch the private overlay with a token on a public runner. That workflow was deleted in commit `b5b682b`; it was not dispatched. The public workflow now builds only independently authored, permitted components.
++
++## Full-app routes checked
++
++- The GitHub API reports `license: null` for `LeoManrique/sm64coopdx-ios`, `coop-deluxe/sm64coopdx`, and `LawrenceBanes/sm64ios-metal` (checked 2026-11-26 UTC). The source trees have no established root license grant. A complete public mirror or upload to a public build runner is not justified.
++- Private integration Actions were rejected before runner allocation with the exact annotation “The job was not started because recent account payments have failed or your spending limit needs to be increased” (run `45738244093`). The iOS job was skipped and both jobs had zero steps. No paid runner, trial, billing change, or bypass was used.
++- This execution host is Linux x86_64 with no `xcodebuild` or `xcrun`. Tailscale currently lists this Linux host and the iPhone; there is no reachable Mac build host.
++- The user-owned local ROM remains local and was not copied to public CI.
++
++Therefore Mission 06's primary target (complete Apple app build and private IPA) remains blocked by the currently available, legitimate zero-cost build routes. The public component artifact is not an IPA and must not be presented as one.
++
++## Next actions
++
++1. The component artifact is downloaded and its checksum manifest is verified; retain this as component-only evidence.
++2. Continue source-only checks that do not expose the unlicensed full engine or consume paid runners. A complete build needs an already-authorized Apple host and a lawful source route; do not send the private source through public Actions.
++3. If a Mac becomes available, run the private overlay build, package and validate the IPA locally, then publish only to the private release. Keep ROM and game data local.
++
++## Evidence labels
++
++- **Host tested:** portable Linux build and tests listed above.
++- **Apple component-compiled/linked:** the public harness workflow; stub interfaces only.
++- **Full iPhoneOS app compiled/linked:** not verified.
++- **IPA packaged/validated:** not produced.
++- **Device verified:** not tested.
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+index 21f56c5b..ad01250b 100644
+--- a/RENDERER_PARITY.md
++++ b/RENDERER_PARITY.md
+@@ -3,19 +3,19 @@
+ | Feature | CoopDX OpenGL ES behavior | Metal status | Evidence / remaining work |
+ |---|---|---|---|
+ | Display-list and DynOS frontend | Shared `gfx_pc.c` interpreter and texture decoder | Must remain shared | No renderer port may bypass this frontend |
+-| Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented, host-tested source generator; MSL not Apple-compiled | Full key and 1/2-cycle formula, fog, edge discard, light map, world color flags and three-point filter translation; tests cover textureless and tile-1-only paths plus unsupported command rejection |
+-| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source implemented; host allocation helper tested | Three command-buffer-safe frame slots reserve non-overlapping, 256-byte-aligned slices; growth is deferred to slot reuse and capped at 32 MiB per frame. GPU execution and Apple compile remain unverified |
++| Color combiner | `ColorCombiner` command stream; generated GLSL | Implemented; Linux tests pass; emitted MSL variants Apple-compiled in component CI | Apple run 45746850842 compiled eight generated permutations plus four retained fixtures. Stub-harness only; no in-game pipeline or pixel output validation |
++| Vertex stream | Clip-space position, UV0/1, optional fog/light map, combiner inputs | Backend source Apple-compiled in a stub-contract harness; host allocation helper tested | Three command-buffer-safe frame slots reserve non-overlapping, 256-byte-aligned slices; growth is deferred to slot reuse and capped at 32 MiB per frame. Full application ABI and GPU execution remain unverified |
+ | Texture upload/cache | RGBA8 uploads; two tiles; N64 wrap/filter modes | Backend source implemented | Bounded cache, wrap/filter samplers, and CoopDX three-point sample path; no invalidation/deletion callback exists in current API; DynOS replacement lifetime unverified |
+ | Depth and decal | Backend depth test/write and z-mode decal callbacks | Backend source implemented | LEQUAL/always states and polygon depth bias; no GPU validation |
+ | Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Backend source implemented | GL blend factors are represented; no visual test of ordering or blend parity |
+ | Fog | Per-vertex fog attribute under combiner flag | Generator/backend source implemented | MSL mixes interpolated fog; no visual validation |
+ | Light-map path | Secondary UV, texture 1 and light-map color | Generator/backend source implemented | Uses `gVertexColor`; requires comparison against real scenes |
+ | Viewport/scissor | Callback-driven screen state | SDL Metal dimensions and top-left to Metal coordinate mapping implemented; clipping helper host-tested | Negative origins and partial right/bottom clips now intersect correctly; an empty/out-of-bounds region suppresses draws until a valid scissor arrives. iOS drawable scale/orientation mapping remains unverified |
+-| Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal layer, drawable, command buffer, triple-buffered vertex/depth resources, bounded in-flight semaphore and present source implemented | No Metal SDK compile/runtime validation; drawable-loss, orientation and background/foreground paths still need device testing |
++| Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal bridge and renderer Apple-compiled and linked to stub harness | Drawable present path compiles; complete app link, drawable-loss, orientation and background/foreground behavior still need app/device testing |
+ | HUD/UI/DJUI | Same display-list frontend with blended draws | Expected to share the frontend | Not tested; textured glyphs and special combiner paths remain a parity risk |
+ | Character animation / DynOS | Same game and graphics frontend | Uses the same planned backend submission path | Not tested; texture cleanup and repeated model switching need runtime tests |
+ | OpenGL ES fallback | Current iOS default | Preserved in source | Must remain known-good and recoverable from failed Metal initialization |
+ 
+-Terms such as “Metal backend”, “iOS build”, and “parity” remain unverified until the corresponding compile/runtime/device evidence is recorded.
++The Metal backend source compiles against Apple's iPhoneOS SDK in a stub contract harness, but is not linked into the complete app. Terms such as “complete iOS build” and “parity” remain unverified until those corresponding app/runtime/device checks are recorded.
+ 
+-Mission 04 host coverage has been expanded, but these tests validate the portable combiner adapter only. The private Apple workflow will compile the generated MSL fixture and build/package the iPhoneOS target when the GitHub Actions account is able to start runners. No renderer callback, UIKit surface, GPU draw, or custom-mod render has yet been Apple/runtime verified.
++Mission 06 added public Apple component validation through run 45746850842. It compiles/links the authored Metal backend with a mock engine contract, builds pinned SDL 2.32.10, and compiles representative MSL. The complete iPhoneOS app, production engine ABI, UIKit surface in game, GPU draw, and custom-mod rendering remain unverified because the public source license is absent, private runner billing is blocked, and no local Mac host is available.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index d70d580a..baa74ad6 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -1,5 +1,14 @@
+ # Mission 02 Validation Record
+ 
++## Mission 06 zero-dollar Apple component validation
++
++- Public source-only harness: `LawrenceBanes/sm64coopdx-metal-build`, verified source commit `0c426ac76bd3a594f2aa47221e51c257164b80dd`.
++- Run `45746850842` passed SDL 2.32.10 iPhoneOS ARM64 build, Metal Objective-C/C adapter compilation, stub-contract dylib link, eight generated MSL variants plus four retained fixtures, and SDL Metal layer lifecycle tests. Downloaded artifact [15082744213](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842/artifacts/15082744213) contains the test dylib; all files passed the included SHA-256 manifest. Archive size is 1,455,487 bytes, SHA-256 `b005151b38680897f960765d7189eb186306984c2f704eddab762d7d36b92067`. The dylib is an ARM64 stub harness, not a game app.
++- Earlier run `45746603843` passed the same workflow but omitted the dylib from artifact upload; the corrected path is validated in `45746850842`.
++- Apple compiler: Xcode 16.4 build 16F6, iPhoneOS SDK 18.5, macOS 15 ARM64.
++- This is component-level validation only. Full game ABI, complete iOS app compile/link, IPA packaging, LiveContainer launch, Metal GPU execution, and device rendering remain unverified.
++- The full app route is blocked by no identified redistribution license for source, private Actions billing restriction, and absence of a Mac host; no paid route or billing-control bypass was used. See `MISSION_06_PROGRESS.md`.
++
+ ## Starting baseline
+ 
+ - CoopDX source baseline: `6bfcfede7a5c1af400daa269931a9ae13ed157ad`.
+@@ -52,3 +61,11 @@ Update this record with exact commands and outcomes for each checkpoint. Do not
+ - After scissor clipping: the focused test suite and ASan/UBSan test passed again; incremental Linux `make -j2` passed. A clean overlay materialization at source commit `79ef8cda` passed the focused tests, sanitized tests, and completed a full Linux link. The new scissor change is staged for the next materialization checkpoint.
+ - Latest exact overlay state: `./materialize.sh /tmp/coopdx-m03-materialize-1d249` verified source tree `8103ebc2bc6b4340a51cfd0ba7d8daf8a67b4688`; host combiner tests, ASan/UBSan, and a clean `make -j2` link passed. GitHub runs `45731814680` and `45732668194` failed before steps with the billing/spending-limit annotation; `ios-arm64` was skipped. No Apple compiler or device evidence was produced.
+ - Local `baserom.us.z64` is gitignored and was not committed or uploaded. The standard build can proceed without copying it into CI; the runtime ROM import remains a device-test requirement.
++
++## Mission 05 Apple shader-only checkpoint
++
++- Public source-only validation repository: `https://github.com/LawrenceBanes/sm64coopdx-metal-build`, commit `7640f3b926a8e69f08bca1c93b011f49db4839b2`. It contains generated shader fixtures, the compiler workflow, documentation, and license only; it is not a full CoopDX source mirror.
++- Workflow `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822` passed on macOS 15.8.2 ARM64, Xcode 16.4 build 16F6, iPhoneOS SDK 18.5. Four MSL fixtures emitted by the real combiner adapter compiled with Apple's `metal -c`: textureless, texture tile 0, texture tile 1, and two-cycle fog/light-map/world color flags.
++- Artifact: `https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45738609822/artifacts/15080650158`; 22,327 bytes; archive SHA-256 `e361ea24ccacb3df36d2a9fcde15cb29a82599e92fd7a083c56a1056aa558133`. Download verification confirmed its four `.air` hashes match `SHA256SUMS.txt` produced in CI.
++- Private full-project workflow `45738244093` could not allocate a runner due the account billing/spending-limit restriction. No CI step ran; iOS job skipped. The full Objective-C backend compile, complete iOS ARM64 link, IPA packaging, and physical-device runtime are still unverified.
++- Scope: this is genuine Apple MSL compiler validation for the four listed permutations. It does not validate Metal backend Objective-C code, app linking, runtime shader/pipeline creation, rendering parity, or iPhone output.
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index ef79134d..5ca6f388 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -201,7 +201,9 @@ static struct ShaderProgram *metal_create_shader(struct ColorCombiner *cc) {
+     struct GfxMetalCoopDXShaderKey key;
+     if (!gfx_metal_coopdx_shader_key(cc, &key)) return NULL;
+     p = &sPrograms[sProgramCount];
+-    memset(p, 0, sizeof(*p));
++    p->info = (struct GfxMetalCoopDXShaderInfo){0};
++    p->pipeline[0] = nil;
++    p->pipeline[1] = nil;
+     p->key = key;
+     p->pipeline[0] = make_pipeline(cc, p, false);
+     p->pipeline[1] = make_pipeline(cc, p, true);
+@@ -312,8 +314,8 @@ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t tria
+     }
+     vector_float3 color = (vector_float3){ gVertexColor[0] / 255.0f, gVertexColor[1] / 255.0f, gVertexColor[2] / 255.0f };
+     [sEncoder setFragmentBytes:&color length:sizeof(color) atIndex:0];
+-    float frame = (float)sFrame;
+-    [sEncoder setFragmentBytes:&frame length:sizeof(frame) atIndex:1];
++    float frameNumber = (float)sFrame;
++    [sEncoder setFragmentBytes:&frameNumber length:sizeof(frameNumber) atIndex:1];
+     [sEncoder setFragmentBytes:gShaderFlags length:sizeof(gShaderFlags) atIndex:2];
+     [sEncoder setFragmentBytes:gShaderFlagValues length:sizeof(gShaderFlagValues) atIndex:3];
+     int filterMode = (int)configFiltering;
+diff --git a/src/pc/gfx/gfx_sdl.c b/src/pc/gfx/gfx_sdl.c
+index 9ea28fb6..42a26768 100644
+--- a/src/pc/gfx/gfx_sdl.c
++++ b/src/pc/gfx/gfx_sdl.c
+@@ -6,7 +6,7 @@
+ 
+ #include <SDL2/SDL.h>
+ #ifdef TARGET_IOS
+-#include <SDL2/SDL_metal.h>
++#include "gfx_sdl_metal_layer.h"
+ #endif
+ 
+ #if defined(_WIN32)
+@@ -67,9 +67,6 @@
+ 
+ static SDL_Window *wnd;
+ static SDL_GLContext ctx = NULL;
+-#ifdef TARGET_IOS
+-static SDL_MetalView metal_view = NULL;
+-#endif
+ static bool sHidpiSupported = false;
+ static bool sHidpiActive = false;
+ static Uint32 sFileImportEvent = (Uint32)-1;
+@@ -91,7 +88,7 @@ static void (*m_scroll)(float, float) = NULL;
+ 
+ static inline void gfx_sdl_set_vsync(const bool enabled) {
+ #ifdef TARGET_IOS
+-    if (metal_view) return; // CAMetalLayer presentation is synchronized by the display.
++    if (gfx_sdl_metal_layer_is_created()) return; // CAMetalLayer presentation is synchronized by the display.
+ #endif
+     SDL_GL_SetSwapInterval(enabled);
+ }
+@@ -216,8 +213,7 @@ static void gfx_sdl_init(const char *window_title) {
+     }
+ #ifdef TARGET_IOS
+     if (configGraphicsBackend == GAPI_METAL) {
+-        metal_view = SDL_Metal_CreateView(wnd);
+-        if (!metal_view) fprintf(stderr, "SDL Metal view creation failed: %s\n", SDL_GetError());
++        if (!gfx_sdl_metal_layer_create(wnd)) fprintf(stderr, "SDL Metal view creation failed: %s\n", SDL_GetError());
+     } else
+ #endif
+     {
+@@ -231,7 +227,7 @@ static void gfx_sdl_init(const char *window_title) {
+         if (ctx) SDL_GL_GetDrawableSize(wnd, &dw, &dh);
+         else {
+ #ifdef TARGET_IOS
+-            if (metal_view) SDL_Metal_GetDrawableSize(wnd, &dw, &dh);
++            if (gfx_sdl_metal_layer_is_created()) gfx_sdl_metal_layer_get_drawable_size(wnd, &dw, &dh);
+             else
+ #endif
+                 SDL_GetWindowSize(wnd, &dw, &dh);
+@@ -291,8 +287,8 @@ static void gfx_sdl_main_loop(void (*run_one_game_iter)(void)) {
+ static void gfx_sdl_get_dimensions(uint32_t *width, uint32_t *height) {
+     int w, h;
+  #ifdef TARGET_IOS
+-    if (metal_view) {
+-        SDL_Metal_GetDrawableSize(wnd, &w, &h);
++    if (gfx_sdl_metal_layer_is_created()) {
++        gfx_sdl_metal_layer_get_drawable_size(wnd, &w, &h);
+     } else
+  #endif
+     if (sHidpiActive) {
+@@ -312,7 +308,7 @@ void gfx_sdl_get_hidpi_scale(float *sx, float *sy) {
+     int dw = 1, dh = 1, ww = 1, wh = 1;
+     if (wnd && sHidpiActive) {
+ #ifdef TARGET_IOS
+-        if (metal_view) SDL_Metal_GetDrawableSize(wnd, &dw, &dh);
++        if (gfx_sdl_metal_layer_is_created()) gfx_sdl_metal_layer_get_drawable_size(wnd, &dw, &dh);
+         else
+ #endif
+             SDL_GL_GetDrawableSize(wnd, &dw, &dh);
+@@ -540,7 +536,7 @@ static bool gfx_sdl_start_frame(void) {
+ 
+ static void gfx_sdl_swap_buffers_begin(void) {
+ #ifdef TARGET_IOS
+-    if (metal_view) return;
++    if (gfx_sdl_metal_layer_is_created()) return;
+ #endif
+     SDL_GL_SwapWindow(wnd);
+ }
+@@ -558,7 +554,7 @@ static void gfx_sdl_delay(u32 ms) {
+ 
+ static int gfx_sdl_get_max_msaa(void) {
+ #ifdef TARGET_IOS
+-    if (metal_view) return 1;
++    if (gfx_sdl_metal_layer_is_created()) return 1;
+ #endif
+     int maxSamples = 0;
+     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+@@ -577,7 +573,7 @@ static void gfx_sdl_reset_window_title(void) {
+ static void gfx_sdl_shutdown(void) {
+     if (SDL_WasInit(0)) {
+ #ifdef TARGET_IOS
+-        if (metal_view) { SDL_Metal_DestroyView(metal_view); metal_view = NULL; }
++        gfx_sdl_metal_layer_destroy();
+ #endif
+         if (ctx) { SDL_GL_DeleteContext(ctx); ctx = NULL; }
+         if (wnd) { SDL_DestroyWindow(wnd); wnd = NULL; }
+@@ -587,10 +583,10 @@ static void gfx_sdl_shutdown(void) {
+ 
+ #ifdef TARGET_IOS
+ void *gfx_sdl_get_metal_layer(void) {
+-    return metal_view ? SDL_Metal_GetLayer(metal_view) : NULL;
++    return gfx_sdl_metal_layer_get();
+ }
+ 
+-bool gfx_sdl_uses_metal(void) { return metal_view != NULL; }
++bool gfx_sdl_uses_metal(void) { return gfx_sdl_metal_layer_is_created(); }
+ #endif
+ 
+ static bool gfx_sdl_has_focus(void) {
+diff --git a/src/pc/gfx/gfx_sdl_metal_layer.c b/src/pc/gfx/gfx_sdl_metal_layer.c
+new file mode 100644
+index 00000000..a56ba263
+--- /dev/null
++++ b/src/pc/gfx/gfx_sdl_metal_layer.c
+@@ -0,0 +1,30 @@
++#include <SDL2/SDL_metal.h>
++
++#include "gfx_sdl_metal_layer.h"
++
++static SDL_MetalView sMetalView;
++
++bool gfx_sdl_metal_layer_create(SDL_Window *window) {
++    if (sMetalView) return true;
++    if (!window) return false;
++    sMetalView = SDL_Metal_CreateView(window);
++    return sMetalView != NULL;
++}
++
++void gfx_sdl_metal_layer_destroy(void) {
++    if (!sMetalView) return;
++    SDL_Metal_DestroyView(sMetalView);
++    sMetalView = NULL;
++}
++
++bool gfx_sdl_metal_layer_is_created(void) {
++    return sMetalView != NULL;
++}
++
++void gfx_sdl_metal_layer_get_drawable_size(SDL_Window *window, int *width, int *height) {
++    if (sMetalView && window) SDL_Metal_GetDrawableSize(window, width, height);
++}
++
++void *gfx_sdl_metal_layer_get(void) {
++    return sMetalView ? SDL_Metal_GetLayer(sMetalView) : NULL;
++}
+diff --git a/src/pc/gfx/gfx_sdl_metal_layer.h b/src/pc/gfx/gfx_sdl_metal_layer.h
+new file mode 100644
+index 00000000..29d4934f
+--- /dev/null
++++ b/src/pc/gfx/gfx_sdl_metal_layer.h
+@@ -0,0 +1,13 @@
++#ifndef GFX_SDL_METAL_LAYER_H
++#define GFX_SDL_METAL_LAYER_H
++
++#include <stdbool.h>
++#include <SDL2/SDL.h>
++
++bool gfx_sdl_metal_layer_create(SDL_Window *window);
++void gfx_sdl_metal_layer_destroy(void);
++bool gfx_sdl_metal_layer_is_created(void);
++void gfx_sdl_metal_layer_get_drawable_size(SDL_Window *window, int *width, int *height);
++void *gfx_sdl_metal_layer_get(void);
++
++#endif
+diff --git a/tests/gfx_sdl_metal_layer_test.c b/tests/gfx_sdl_metal_layer_test.c
+new file mode 100644
+index 00000000..fbc560a7
+--- /dev/null
++++ b/tests/gfx_sdl_metal_layer_test.c
+@@ -0,0 +1,54 @@
++#include <assert.h>
++#include <stdbool.h>
++#include <stdio.h>
++
++#include <SDL2/SDL_metal.h>
++#include "pc/gfx/gfx_sdl_metal_layer.h"
++
++struct SDL_Window { int identity; };
++static int sCreateCount, sDestroyCount, sSizeCount;
++static int sFakeView, sFakeLayer;
++
++SDL_MetalView SDL_Metal_CreateView(SDL_Window *window) {
++    assert(window != NULL);
++    ++sCreateCount;
++    return &sFakeView;
++}
++void SDL_Metal_DestroyView(SDL_MetalView view) {
++    assert(view == &sFakeView);
++    ++sDestroyCount;
++}
++void *SDL_Metal_GetLayer(SDL_MetalView view) {
++    assert(view == &sFakeView);
++    return &sFakeLayer;
++}
++void SDL_Metal_GetDrawableSize(SDL_Window *window, int *width, int *height) {
++    assert(window != NULL);
++    ++sSizeCount;
++    if (width) *width = 1170;
++    if (height) *height = 2532;
++}
++
++int main(void) {
++    SDL_Window window = { 1 };
++    int width = 0, height = 0;
++
++    assert(!gfx_sdl_metal_layer_is_created());
++    assert(gfx_sdl_metal_layer_get() == NULL);
++    assert(!gfx_sdl_metal_layer_create(NULL));
++    assert(sCreateCount == 0);
++    assert(gfx_sdl_metal_layer_create(&window));
++    assert(gfx_sdl_metal_layer_create(&window));
++    assert(sCreateCount == 1);
++    assert(gfx_sdl_metal_layer_is_created());
++    assert(gfx_sdl_metal_layer_get() == &sFakeLayer);
++    gfx_sdl_metal_layer_get_drawable_size(&window, &width, &height);
++    assert(width == 1170 && height == 2532 && sSizeCount == 1);
++    gfx_sdl_metal_layer_destroy();
++    gfx_sdl_metal_layer_destroy();
++    assert(sDestroyCount == 1);
++    assert(!gfx_sdl_metal_layer_is_created());
++    assert(gfx_sdl_metal_layer_get() == NULL);
++    puts("SDL Metal layer lifecycle tests: passed");
++    return 0;
++}
+diff --git a/tests/run_gfx_sdl_metal_layer_test.sh b/tests/run_gfx_sdl_metal_layer_test.sh
+new file mode 100755
+index 00000000..3a68b55c
+--- /dev/null
++++ b/tests/run_gfx_sdl_metal_layer_test.sh
+@@ -0,0 +1,10 @@
++#!/usr/bin/env bash
++set -euo pipefail
++ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++OUT="$(mktemp /tmp/gfx-sdl-metal-layer-test.XXXXXX)"
++trap 'rm -f "$OUT"' EXIT
++"${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
++    -I"$ROOT/tests/sdl_metal_stubs" -I"$ROOT/src" \
++    "$ROOT/tests/gfx_sdl_metal_layer_test.c" \
++    "$ROOT/src/pc/gfx/gfx_sdl_metal_layer.c" -o "$OUT"
++"$OUT"
+diff --git a/tests/sdl_metal_stubs/SDL2/SDL.h b/tests/sdl_metal_stubs/SDL2/SDL.h
+new file mode 100644
+index 00000000..b700c5ca
+--- /dev/null
++++ b/tests/sdl_metal_stubs/SDL2/SDL.h
+@@ -0,0 +1,5 @@
++#ifndef TEST_SDL_H
++#define TEST_SDL_H
++#include <stddef.h>
++typedef struct SDL_Window SDL_Window;
++#endif
+diff --git a/tests/sdl_metal_stubs/SDL2/SDL_metal.h b/tests/sdl_metal_stubs/SDL2/SDL_metal.h
+new file mode 100644
+index 00000000..7e2df410
+--- /dev/null
++++ b/tests/sdl_metal_stubs/SDL2/SDL_metal.h
+@@ -0,0 +1,9 @@
++#ifndef TEST_SDL_METAL_H
++#define TEST_SDL_METAL_H
++#include "SDL.h"
++typedef void *SDL_MetalView;
++SDL_MetalView SDL_Metal_CreateView(SDL_Window *window);
++void SDL_Metal_DestroyView(SDL_MetalView view);
++void *SDL_Metal_GetLayer(SDL_MetalView view);
++void SDL_Metal_GetDrawableSize(SDL_Window *window, int *width, int *height);
++#endif
+-- 
+2.56.1
+

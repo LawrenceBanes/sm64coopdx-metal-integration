@@ -17,3 +17,4 @@ b4d4f230f37700b12fddf62ef8ad765e7de4da544901eac612c39cd1a3bd0a36  ./0016-Clip-Me
 ecb90c11c4b7af1e5dcf81ce786967bc639469d76ddea1a2620b41170723542a  ./0017-Record-final-Mission-03-04-validation-checkpoint.patch
 7b5cedd01b223b3383ce02ef3bf5c334355843e61558d169d4190714b43ce5d0  0018-Fix-iOS-Metal-SDK-API-usage.patch
 e9b248c861b85ac88ca5c63d43565991daedcc8dc56529f7fd9f54626d84c569  0019-Make-Metal-object-cache-ARC-safe.patch
+ca65fe487e222484b88a415f73b0c2df52a0a8f7f838cc125cb02a71c88f69f3  0020-Sync-Mission-06-integration-source-and-validation.patch

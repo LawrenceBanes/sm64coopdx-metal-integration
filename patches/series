@@ -17,3 +17,4 @@
 0017-Record-final-Mission-03-04-validation-checkpoint.patch
 0018-Fix-iOS-Metal-SDK-API-usage.patch
 0019-Make-Metal-object-cache-ARC-safe.patch
+0020-Sync-Mission-06-integration-source-and-validation.patch
