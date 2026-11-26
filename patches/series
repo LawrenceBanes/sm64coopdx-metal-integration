@@ -22,3 +22,5 @@
 0022-Clarify-final-Mission-06-source-checkpoints.patch
 0023-Make-Mission-06-handoff-checkpoint-neutral.patch
 0024-Keep-Mission-06-handoff-hash-neutral.patch
+0025-Integrate-Missions-07-and-08-renderer-and-touch-UI.patch
+0026-Record-Mission-09-integration-validation.patch

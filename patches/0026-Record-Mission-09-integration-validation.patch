@@ -1,0 +1,89 @@
+From c34f5f1e70d8a0ed31a7fa1764bc029030918adf Mon Sep 17 00:00:00 2001
+From: SHADER64 CI Overlay <overlay-ci@localhost>
+Date: Wed, 25 Nov 2026 23:22:43 -0600
+Subject: [PATCH 2/2] Record Mission 09 integration validation
+
+---
+ HANDOFF.md             |  6 ++++--
+ MISSION_09_PROGRESS.md | 32 ++++++++++++++++++++++++++++++++
+ VALIDATION.md          |  9 +++++++++
+ 3 files changed, 45 insertions(+), 2 deletions(-)
+ create mode 100644 MISSION_09_PROGRESS.md
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index b9482730..0c969a7d 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -1,8 +1,10 @@
+ # CoopDX Metal Integration Handoff
+ 
+-## Missions 07–08 checkpoint
++## Mission 09 checkpoint
+ 
+-Current development branch: `mission-07-08-metal-after-dark`, latest commit `b8e4505b9bcfc94039d137cf8aaf99990a4be939`. The working tree is clean. Focused milestones are committed through `ff973f66` (touch UI), `1a4ab8af` (frame-state and cache rewind), `b9c1c755` (Metal upload/sampler hardening), and `abeb3c9d`/`b8e4505b` (touch cancel and ownership tests). This checkout has only the upstream CoopDX remote; do not push mission changes there. The public Apple harness was updated separately under its existing MIT-licensed, independently authored component scope.
++Current source branch: `mission-09-final-assembly`. It starts from Mission 07–08 checkpoint `2bc9d557fe5f6e20842b4dc2985bf87b806ab459`; final Mission 09 validation and push details are in [MISSION_09_PROGRESS.md](MISSION_09_PROGRESS.md). The source checkout has only the upstream CoopDX remote, which must not be used for publishing. The private patch-only integration remote is `LawrenceBanes/sm64coopdx-metal-integration`.
++
++Mission 07–08 source work is preserved in the Mission 09 branch. Focused renderer/touch tests and ASan/UBSan checks pass; the complete Linux build and clean overlay reproduction are being validated for this checkpoint. Apple component-only CI is recorded below; no full iOS app build, IPA, or iPhone runtime result exists.
+ 
+ Mission 08 is underway: the original iOS control art and layout have been adapted to the shared CoopDX touch overlay, including separate Start and Menu positions, visible C-button priority over the broad camera hit zone, and centered signed joystick-axis mapping. The CoopDX Menu button maps to its regular Start/pause input because it does not expose the original iOS port's separate menu callback. Details and limits are in [TOUCH_UI_PARITY.md](TOUCH_UI_PARITY.md).
+ 
+diff --git a/MISSION_09_PROGRESS.md b/MISSION_09_PROGRESS.md
+new file mode 100644
+index 00000000..bdd26cab
+--- /dev/null
++++ b/MISSION_09_PROGRESS.md
+@@ -0,0 +1,32 @@
++# Mission 09 — Final Assembly Progress
++
++## Checkpoint scope
++
++Branch `mission-09-final-assembly` preserves the Mission 07–08 implementation on top of the Mission 06 patch-only integration. The private overlay repository contains a patch series rather than a second full source mirror; it materializes pinned CoopDX iOS upstream and applies permitted integration patches. Do not push to the public upstream remote.
++
++## Integrated and host-validated
++
++- CoopDX source tree materialized from the pinned iOS baseline plus the integration patch series, including the restored iOS touch art/layout, multi-touch ownership and cancellation, touch hit-priority/axis helpers, Metal state retention and failure-safe texture/sampler updates, and texture-cache rewind protection.
++- Four focused regression scripts pass: Metal combiner/MSL generation, SDL Metal-layer lifecycle, raw/DynOS shared texture-cache rewind, and touchscreen hit-priority/joystick math.
++- All four focused scripts pass with `SANITIZE=1 CC=clang` (ASan/UBSan).
++- A clean overlay materialization completed `make -j2` and linked `build/us_pc/sm64coopdx`; the source checkout also passed incremental `make -j2`. The clean materialized tree is recorded after the documentation commit.
++- Original reset-to-defaults control-editor action remains available. Existing saved positions are not overwritten on upgrade; users can explicitly restore the original layout. Fresh configurations use the original layout defaults. This avoids discarding custom placements during migration.
++
++## Evidence limits / outstanding
++
++- Public Apple harness runs `45757822398` and `45758034420` passed component-only iPhoneOS/ARM64 compilation, SDL/Metal adapter stub-contract linking, and generated MSL validation. They do not compile or link the complete CoopDX app.
++- Full app Apple compilation and IPA packaging remain blocked: the available private Actions route has the account spending restriction; public full-source publishing is not justified because no redistribution license for the upstream iOS source was identified; no reachable Mac host is available. No workaround was attempted.
++- No physical iPhone rendering, safe-area/orientation layout, touch feel, DynOS GPU rendering, or Metal resource lifetime has been verified on hardware.
++- `make test` requires `mupen64plus`, which is absent. The full Linux build and focused regression suite are the available host evidence.
++
++## Delivery record
++
++Delivery status:
++
++- Source branch/commit: `mission-09-final-assembly` / recorded in the final handoff.
++- Private overlay branch/commit: pending push verification.
++- Materialized source tree: recorded in the final handoff.
++- Clean materialized `make -j2`: exit 0; linked `build/us_pc/sm64coopdx`.
++- Focused tests: pass, normal and ASan/UBSan.
++- Apple component CI: runs `45757822398`, `45758034420` passed; no full app workflow.
++- iPhone/IPA: unavailable; not claimed.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 66d23e62..9eb9ad96 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -1,5 +1,14 @@
+ # Mission 02 Validation Record
+ 
++## Mission 09 integration checkpoint
++
++- `make -j2` — run on the clean materialized patch-overlay tree; final status is recorded in `MISSION_09_PROGRESS.md`.
++- `tests/run_gfx_metal_coopdx_shader_test.sh`, `tests/run_gfx_sdl_metal_layer_test.sh`, `tests/run_gfx_texture_cache_rewind_test.sh`, and `tests/run_touchscreen_controls_math_test.sh` — passed on the clean materialized tree.
++- The same four test scripts with `SANITIZE=1 CC=clang` — passed under ASan/UBSan.
++- `git diff --check` — passed.
++- Full `make test` is not represented as passing: its upstream target requires the unavailable `mupen64plus` executable. This does not block the Linux compile/link or focused tests.
++- Exact clean-tree reproduction and Apple/full-app status are documented in `MISSION_09_PROGRESS.md`. No iPhone visual/input validation is claimed.
++
+ ## Mission 07–08 working checkpoint (`mission-07-08-metal-after-dark`)
+ 
+ - `tests/run_touchscreen_controls_math_test.sh` — passed. Covers overlapping visible buttons versus the oversized pointer region, touch ownership availability, no-hit handling, joystick radius clamping, centered and signed axis values, vertical inversion, and integer boundary inputs.
+-- 
+2.56.1
+
