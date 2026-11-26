@@ -1,0 +1,25 @@
+From dd42a62aff9c27c6cea2f0476e728a746709e150 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:25:07 -0600
+Subject: [PATCH] Keep Mission 06 handoff hash-neutral
+
+---
+ MISSION_06_PROGRESS.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/MISSION_06_PROGRESS.md b/MISSION_06_PROGRESS.md
+index 92ed9771..53fb2f18 100644
+--- a/MISSION_06_PROGRESS.md
++++ b/MISSION_06_PROGRESS.md
+@@ -10,7 +10,7 @@
+ - Integration branch: `mission-03-04-metal-first-light-parity`
+ - Integration source checkpoint: `297c6075` (`Make Metal object cache ARC-safe`), followed by Mission 06 handoff updates. The local branch has only the `upstream` remote, which must not be used for publishing.
+ - Private overlay repository: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-03-04-metal-first-light-parity`. It contains the verified implementation and hash-pinned patch series. Push triggers are disabled in the private workflow, so overlay updates do not start private Actions jobs.
+-- `materialize.sh /tmp/mission06-materialized-final` passed and verified implementation tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations. The final overlay adds documentation only and verifies tree `c37fe3d664b2c74f19c988bc62c4c606218b61f7`.
++- `materialize.sh /tmp/mission06-materialized-final` passed and verified implementation tree `bfcf67c87eea4f0da2bd836ba40b42539a2098bd`; that clean tree passed `make -j2`, combiner tests, SDL bridge tests, and normal plus ASan/UBSan invocations. Later overlay patches only revise the handoff records; the materializer continues to enforce the full source tree hash.
+ - Public, source-only component harness: [LawrenceBanes/sm64coopdx-metal-build](https://github.com/LawrenceBanes/sm64coopdx-metal-build)
+ - Latest public harness commit: `0c426ac76bd3a594f2aa47221e51c257164b80dd` (`Include the linked ARM64 Metal harness in CI artifacts`).
+ - Verification run for corrected artifact path: [45746850842](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45746850842) — passed.
+-- 
+2.56.1
+
