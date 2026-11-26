@@ -15,7 +15,7 @@ jobs:
       - name: Install host build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential git python3 libglew-dev libsdl2-dev libz-dev libcurl4-openssl-dev zip
+          sudo apt-get install --yes build-essential git python3 pkg-config libglew-dev libsdl2-dev libz-dev libcurl4-openssl-dev zip
       - name: Materialize pinned source from patches
         run: ./materialize.sh "$RUNNER_TEMP/coopdx"
       - name: Build Linux game and test combiner generator

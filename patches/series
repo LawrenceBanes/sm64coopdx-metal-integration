@@ -26,3 +26,4 @@
 0026-Record-Mission-09-integration-validation.patch
 0027-Record-Mission-09-clean-build-and-Apple-validation.patch
 0028-Fix-Lua-include-path-in-Metal-host-test.patch
+0029-Use-pkg-config-SDL2-flags-in-Metal-test.patch

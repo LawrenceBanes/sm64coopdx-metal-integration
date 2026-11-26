@@ -1,0 +1,33 @@
+From bedbee202f0d877149344a30d1aeea8ae3a29cdf Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Thu, 26 Nov 2026 11:19:58 -0600
+Subject: [PATCH] Use pkg-config to locate SDL2 headers in shader test
+
+---
+ tests/run_gfx_metal_coopdx_shader_test.sh | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/tests/run_gfx_metal_coopdx_shader_test.sh b/tests/run_gfx_metal_coopdx_shader_test.sh
+index 707759ce..a0960d2c 100755
+--- a/tests/run_gfx_metal_coopdx_shader_test.sh
++++ b/tests/run_gfx_metal_coopdx_shader_test.sh
+@@ -5,9 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ OUT="$(mktemp /tmp/gfx-metal-coopdx-shader-test.XXXXXX)"
+ trap 'rm -f "$OUT"' EXIT
+ 
++if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists sdl2; then
++    echo "Error: SDL2 development headers and pkg-config metadata are required." >&2
++    exit 1
++fi
++read -r -a SDL_CFLAGS <<< "$(pkg-config --cflags sdl2)"
++
+ FLAGS=(-std=c11 -Wall -Wextra -Werror -DNON_MATCHING=1 -DAVOID_UB=1
+        -DVERSION_US=1 -DF3DEX_GBI_2E=1 -DF3DEX_GBI_SHARED=1 -D_LANGUAGE_C
+        -I"$ROOT" -I"$ROOT/include" -I"$ROOT/src" -I"$ROOT/lib/lua/include")
++FLAGS+=("${SDL_CFLAGS[@]}")
+ if [[ "${SANITIZE:-0}" == "1" ]]; then
+     FLAGS+=(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+ fi
+-- 
+2.56.1
+
