@@ -25,3 +25,4 @@ f9c2354f616fe523d4c28fcf57f8ad93c7a72777f13dc2b88dd1a1f7ef27f3e9  0021-Record-fi
 0e22f7de30f1062c7ddbdbed4a8bf19af02a0a33bb45b26413b062169cb770f7  0025-Integrate-Missions-07-and-08-renderer-and-touch-UI.patch
 58c54c0d464226b511e301cfe6d246891749daa79098203df97db99eeb1d763f  0026-Record-Mission-09-integration-validation.patch
 302a0d27e08a7ab44b582b62e6752dae63820ec9c72ae8be8a0c0ba382c70a2b  0027-Record-Mission-09-clean-build-and-Apple-validation.patch
+529f50eb2721615cc057660a2369e1fe954e99755288f3365d47f8affcc64171  0028-Fix-Lua-include-path-in-Metal-host-test.patch

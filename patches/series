@@ -25,3 +25,4 @@
 0025-Integrate-Missions-07-and-08-renderer-and-touch-UI.patch
 0026-Record-Mission-09-integration-validation.patch
 0027-Record-Mission-09-clean-build-and-Apple-validation.patch
+0028-Fix-Lua-include-path-in-Metal-host-test.patch
