@@ -1,0 +1,69 @@
+From e6a07da67afecf331ea3e423a7260db1d8b2845a Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 21:01:46 -0600
+Subject: [PATCH] Make Metal object cache ARC-safe
+
+---
+ src/pc/gfx/gfx_metal_coopdx.m | 23 ++++++++++++++---------
+ 1 file changed, 14 insertions(+), 9 deletions(-)
+
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index 2769bf1f..ef79134d 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -237,11 +237,11 @@ static void metal_select_texture(int tile, uint32_t id) {
+ }
+ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
+     int tile = sUploadTile;
+-    uint32_t id = sSelectedTexture[tile];
+-    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || id == 0 || id >= METAL_TEXTURE_LIMIT) return;
++    uint32_t textureId = sSelectedTexture[tile];
++    if (!rgba || width <= 0 || height <= 0 || width > 4096 || height > 4096 || textureId == 0 || textureId >= METAL_TEXTURE_LIMIT) return;
+     NSUInteger bytes = (NSUInteger)width * (NSUInteger)height * 4;
+     if (bytes > METAL_MAX_SINGLE_TEXTURE_BYTES) return;
+-    NSUInteger oldBytes = sTextures[id] ? sTextures[id].width * sTextures[id].height * 4 : 0;
++    NSUInteger oldBytes = sTextures[textureId] ? sTextures[textureId].width * sTextures[textureId].height * 4 : 0;
+     if (sTextureBytes - oldBytes + bytes > METAL_MAX_TEXTURE_BYTES) {
+         fprintf(stderr, "Metal texture memory budget exceeded\n");
+         return;
+@@ -249,10 +249,10 @@ static void metal_upload_texture(const uint8_t *rgba, int width, int height) {
+     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:(NSUInteger)width height:(NSUInteger)height mipmapped:NO];
+     d.usage = MTLTextureUsageShaderRead;
+     d.storageMode = MTLStorageModeShared;
+-    id<MTLTexture> texture = [sDevice newTextureWithDescriptor:d];
+-    if (!texture) return;
+-    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
+-    sTextures[id] = texture;
++    id<MTLTexture> uploadedTexture = [sDevice newTextureWithDescriptor:d];
++    if (!uploadedTexture) return;
++    [uploadedTexture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:rgba bytesPerRow:(NSUInteger)width * 4];
++    sTextures[textureId] = uploadedTexture;
+     sTextureBytes = sTextureBytes - oldBytes + bytes;
+ }
+ static void metal_set_sampler(int tile, bool linear, uint32_t cms, uint32_t cmt) {
+@@ -438,7 +438,13 @@ static const char *metal_name(void) { return "Metal (CoopDX)"; }
+ static void metal_shutdown(void) {
+     sReady = false;
+     sEncoder = nil; sCommandBuffer = nil; sDrawable = nil;
+-    sProgram = NULL; sProgramCount = 0;
++    sProgram = NULL;
++    for (NSUInteger i = 0; i < sProgramCount; ++i) {
++        sPrograms[i].pipeline[0] = nil;
++        sPrograms[i].pipeline[1] = nil;
++        sPrograms[i].info = (struct GfxMetalCoopDXShaderInfo){0};
++    }
++    sProgramCount = 0;
+     for (int i = 0; i < METAL_FRAMES_IN_FLIGHT; ++i) {
+         sVertexFrames[i].buffer = nil;
+         sVertexFrames[i].depth = nil;
+@@ -451,7 +457,6 @@ static void metal_shutdown(void) {
+     sTextureBytes = 0;
+     sNextTexture = 1; sUploadTile = 0;
+     memset(sSelectedTexture, 0, sizeof(sSelectedTexture));
+-    memset(sPrograms, 0, sizeof(sPrograms));
+     for (NSUInteger i = 0; i < METAL_TEXTURE_LIMIT; ++i) sTextures[i] = nil;
+     sDepthStates[0][0] = nil; sDepthStates[0][1] = nil;
+     sDepthStates[1][0] = nil; sDepthStates[1][1] = nil;
+-- 
+2.56.1
+

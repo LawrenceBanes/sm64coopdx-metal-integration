@@ -15,3 +15,5 @@
 0015-Protect-in-flight-Metal-vertex-and-depth-resources.patch
 0016-Clip-Metal-scissor-rectangles-to-drawable-bounds.patch
 0017-Record-final-Mission-03-04-validation-checkpoint.patch
+0018-Fix-iOS-Metal-SDK-API-usage.patch
+0019-Make-Metal-object-cache-ARC-safe.patch
