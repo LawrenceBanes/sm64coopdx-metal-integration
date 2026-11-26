@@ -1,0 +1,206 @@
+From 1d2498f99b1235f0df4f47b7034ae04192d28e40 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 18:59:00 -0600
+Subject: [PATCH] Clip Metal scissor rectangles to drawable bounds
+
+---
+ HANDOFF.md                           |  2 +-
+ MISSION_03_04_PROGRESS.md            |  2 ++
+ RENDERER_PARITY.md                   |  2 +-
+ VALIDATION.md                        |  2 ++
+ src/pc/gfx/gfx_metal_coopdx.m        | 20 ++++++++++-------
+ src/pc/gfx/gfx_metal_coopdx_rect.h   | 33 ++++++++++++++++++++++++++++
+ tests/gfx_metal_coopdx_shader_test.c | 13 +++++++++++
+ 7 files changed, 64 insertions(+), 10 deletions(-)
+ create mode 100644 src/pc/gfx/gfx_metal_coopdx_rect.h
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index e379c1c2..5ac08957 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -15,4 +15,4 @@ Mission 03/04 starts at `fd2c768729b60f926382086b50f25b97c60b725d` on the dedica
+ 
+ The GitHub CLI is authenticated for `LawrenceBanes`. The full-source checkout's only remote is `upstream` (`LeoManrique/sm64coopdx-ios`) and must not be used for publishing. The iOS fork and the original Metal repository have no root license file / GitHub license metadata; no renderer source was copied and full-source publication is on hold pending a compatible distribution basis. A private patch-only overlay now exists at `https://github.com/LawrenceBanes/sm64coopdx-metal-integration` and fetches the pinned public source at build time.
+ 
+-Latest Mission 03/04 local validation: `make -j2`, combiner/vertex-stream adapter tests, and ASan/UBSan tests pass. The Metal backend now uses three in-flight vertex/depth slots with bounded non-overlapping vertex slices; this addresses a CPU overwrite hazard found by source inspection, but remains unverified by Apple's compiler/GPU. A fresh clone reconstructed from pinned upstream plus the patch series builds on Linux without a ROM. SDL preparation and Linux CMake checks pass. Overlay workflows `45730350990` and `45730896116` were both rejected before any runner steps because GitHub reports failed account payments or a spending-limit restriction; no Apple compilation or IPA exists. Continue local parity work and rerun when GitHub can allocate runners.
++Latest Mission 03/04 local validation: `make -j2`, combiner/vertex-stream/scissor adapter tests, and ASan/UBSan tests pass. The Metal backend now uses three in-flight vertex/depth slots with bounded non-overlapping vertex slices, plus correctly clipped top-left-origin scissors; these source-reviewed fixes remain unverified by Apple's compiler/GPU. A clean overlay materialization at commit `79ef8cda` passed focused and sanitized tests and linked the full Linux executable; the subsequent scissor update is pending rematerialization. SDL preparation and Linux CMake checks pass. Overlay workflows `45730350990`, `45730896116`, and `45731814680` were rejected before any runner steps because GitHub reports failed account payments or a spending-limit restriction; no Apple compilation or IPA exists. Continue local parity work and rerun when GitHub can allocate runners.
+diff --git a/MISSION_03_04_PROGRESS.md b/MISSION_03_04_PROGRESS.md
+index b55d5554..3d905a36 100644
+--- a/MISSION_03_04_PROGRESS.md
++++ b/MISSION_03_04_PROGRESS.md
+@@ -20,6 +20,7 @@
+ - Extended the combiner regression harness to emit its real generated MSL fixture for Apple's Metal compiler.
+ - Expanded host coverage for textureless and tile-1-only shader layouts, key-field changes, and unsupported combiner command rejection.
+ - Fixed the Metal draw-stream reuse hazard: each of three in-flight frames now uses its own vertex buffer slices and depth target; a semaphore prevents a slot from being reused until its command buffer completes. Stream growth is deferred until that slot is safe to reuse and capped at 32 MiB. The portable allocator has deterministic non-overlap, alignment, reset, and budget tests.
++- Corrected Metal scissor clipping for negative origins and right/bottom overrun using overflow-safe intersection math; fully clipped rectangles now suppress draw submission until a valid scissor is restored.
+ - Refreshed `HANDOFF.md`, `METAL_INTEGRATION_PLAN.md`, and `VALIDATION.md` with current facts and evidence.
+ 
+ ## Validation
+@@ -34,6 +35,7 @@
+ - `METAL_MSL_OUTPUT='/tmp/coopdx msl emitted.metal' tests/run_gfx_metal_coopdx_shader_test.sh` and the sanitized counterpart — passed; emitted the same 3,905-byte generated MSL fixture.
+ - `METAL_MSL_OUTPUT=/tmp/mission04-complex.metal tests/run_gfx_metal_coopdx_shader_test.sh` — passed and emits the representative two-cycle fixture. Apple Metal compilation remains unverified.
+ - After the vertex-stream change: `tests/run_gfx_metal_coopdx_shader_test.sh`, its ASan/UBSan variant, and `make -j2` — passed. This does not compile the Objective-C Metal backend.
++- After scissor conversion changes: the same host tests, ASan/UBSan, `git diff --check`, and incremental `make -j2` — passed. The scissor arithmetic is host-tested; Metal command encoding remains Apple-uncompiled.
+ - `make test` — blocked because the target attempts to execute `mupen64plus`, which is not installed (`Error 127`).
+ - Private overlay workflow `45730350990` — GitHub rejected runner allocation before steps started because recent account payments failed or the spending limit must be increased. No billing action was attempted.
+ - Follow-up overlay workflow `45730896116` — same account-level runner allocation rejection; host job failed with zero steps and iOS job was skipped. GitHub check annotation: "The job was not started because recent account payments have failed or your spending limit needs to be increased." No billing action was attempted.
+diff --git a/RENDERER_PARITY.md b/RENDERER_PARITY.md
+index 059f65d9..21f56c5b 100644
+--- a/RENDERER_PARITY.md
++++ b/RENDERER_PARITY.md
+@@ -10,7 +10,7 @@
+ | Alpha/transparency | Alpha variant plus blend state and texture-edge discard | Backend source implemented | GL blend factors are represented; no visual test of ordering or blend parity |
+ | Fog | Per-vertex fog attribute under combiner flag | Generator/backend source implemented | MSL mixes interpolated fog; no visual validation |
+ | Light-map path | Secondary UV, texture 1 and light-map color | Generator/backend source implemented | Uses `gVertexColor`; requires comparison against real scenes |
+-| Viewport/scissor | Callback-driven screen state | SDL Metal dimensions and backend state implemented | iOS drawable scale/orientation and coordinate mapping unverified |
++| Viewport/scissor | Callback-driven screen state | SDL Metal dimensions and top-left to Metal coordinate mapping implemented; clipping helper host-tested | Negative origins and partial right/bottom clips now intersect correctly; an empty/out-of-bounds region suppresses draws until a valid scissor arrives. iOS drawable scale/orientation mapping remains unverified |
+ | Frame lifecycle | SDL GL context, GL clear/swap | SDL Metal layer, drawable, command buffer, triple-buffered vertex/depth resources, bounded in-flight semaphore and present source implemented | No Metal SDK compile/runtime validation; drawable-loss, orientation and background/foreground paths still need device testing |
+ | HUD/UI/DJUI | Same display-list frontend with blended draws | Expected to share the frontend | Not tested; textured glyphs and special combiner paths remain a parity risk |
+ | Character animation / DynOS | Same game and graphics frontend | Uses the same planned backend submission path | Not tested; texture cleanup and repeated model switching need runtime tests |
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 87d31e5a..9e4549d0 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -13,6 +13,7 @@
+ - `tests/run_gfx_metal_coopdx_shader_test.sh` — passed.
+ - `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh` — passed under ASan/UBSan.
+ - The portable vertex stream allocator is exercised for aligned non-overlapping slices, capacity exhaustion without wraparound, per-frame reset, and reuse after reset. This tests allocation arithmetic only; the triple-buffered Metal resource path has not run on an Apple GPU.
++- The top-left-origin scissor conversion helper is tested for ordinary, negative-origin, right/bottom-clipped, empty, and fully offscreen rectangles. Actual Metal scissor encoding is still not Apple-compiled or runtime-tested.
+ - Expanded combiner tests cover textureless shading, a tile-1-only vertex layout, key changes from commands/mapping/flags, and rejection of unsupported commands. `METAL_MSL_OUTPUT=/tmp/mission04-complex.metal tests/run_gfx_metal_coopdx_shader_test.sh` emits the representative two-cycle, fog, alpha, light-map, world-flag and two-texture MSL fixture for Apple compilation.
+ - `make -j2` — passed after C/UI/SDL selection changes; links `build/us_pc/sm64coopdx`. The Linux build does not compile the iOS-only Objective-C Metal source.
+ - Adapter regression now asserts generated world color flag expressions and the CoopDX three-point sampling path in addition to alpha/fog/light-map/cycle variants.
+@@ -48,4 +49,5 @@ Update this record with exact commands and outcomes for each checkpoint. Do not
+ - The patch-only private overlay `LawrenceBanes/sm64coopdx-metal-integration` was created and its branch pushed. First workflow run `45730350990` did not start a runner; GitHub's check annotation reports failed account payments or a spending-limit issue. This is an account-level external blocker. No public visibility change, spending-limit change, or billing action was attempted.
+ - Follow-up workflow `45730896116` also failed before any runner steps with the same exact billing/spending-limit annotation; host job has zero steps and the iOS job is skipped. This provides no compile evidence.
+ - After adding the frame-safe vertex stream: `git diff --check`, `tests/run_gfx_metal_coopdx_shader_test.sh`, `SANITIZE=1 CC=clang tests/run_gfx_metal_coopdx_shader_test.sh`, and `make -j2` — passed. The iOS-only Objective-C Metal source is excluded from the Linux build.
++- After scissor clipping: the focused test suite and ASan/UBSan test passed again; incremental Linux `make -j2` passed. A clean overlay materialization at source commit `79ef8cda` passed the focused tests, sanitized tests, and completed a full Linux link. The new scissor change is staged for the next materialization checkpoint.
+ - Local `baserom.us.z64` is gitignored and was not committed or uploaded. The standard build can proceed without copying it into CI; the runtime ROM import remains a device-test requirement.
+diff --git a/src/pc/gfx/gfx_metal_coopdx.m b/src/pc/gfx/gfx_metal_coopdx.m
+index e0e0f1a6..12ab7458 100644
+--- a/src/pc/gfx/gfx_metal_coopdx.m
++++ b/src/pc/gfx/gfx_metal_coopdx.m
+@@ -10,6 +10,7 @@
+ #include <string.h>
+ 
+ #include "gfx_metal_coopdx.h"
++#include "gfx_metal_coopdx_rect.h"
+ #include "gfx_metal_coopdx_shader.h"
+ #include "gfx_metal_coopdx_stream.h"
+ #include "gfx_sdl.h"
+@@ -61,6 +62,7 @@ static uint32_t sSelectedTexture[2];
+ static int sUploadTile;
+ static struct MetalProgram *sProgram;
+ static bool sAlpha, sDepthEnabled = true, sDepthWrite = true, sDecal;
++static bool sScissorEmpty;
+ static NSUInteger sWidth, sHeight;
+ static uint32_t sFrame;
+ static bool sReady;
+@@ -265,17 +267,19 @@ static void metal_set_viewport(int x, int y, int w, int h) {
+     [sEncoder setViewport:v];
+ }
+ static void metal_set_scissor(int x, int y, int w, int h) {
+-    if (!sEncoder || w <= 0 || h <= 0) return;
+-    NSUInteger sx = (NSUInteger)MAX(0, x), rawY = (NSUInteger)MAX(0, y);
+-    NSUInteger sy = rawY < sHeight ? sHeight - MIN(sHeight, rawY + (NSUInteger)h) : 0;
+-    NSUInteger ex = MIN(sWidth, sx + (NSUInteger)w), ey = MIN(sHeight, sy + (NSUInteger)h);
+-    if (ex <= sx || ey <= sy) return;
+-    [sEncoder setScissorRect:MTLScissorRectMake(sx, sy, ex - sx, ey - sy)];
++    if (!sEncoder) return;
++    struct GfxMetalCoopDXScissorRect rect;
++    if (!gfx_metal_coopdx_clip_scissor(x, y, w, h, (uint32_t)sWidth, (uint32_t)sHeight, &rect)) {
++        sScissorEmpty = true;
++        return;
++    }
++    sScissorEmpty = false;
++    [sEncoder setScissorRect:MTLScissorRectMake(rect.x, rect.y, rect.width, rect.height)];
+ }
+ static void metal_set_alpha(bool enabled) { sAlpha = enabled; }
+ 
+ static void metal_draw_triangles(float *vertices, size_t floatCount, size_t triangleCount) {
+-    if (!sEncoder || !sProgram || !vertices || !triangleCount || triangleCount > UINT32_MAX / 3) return;
++    if (!sEncoder || sScissorEmpty || !sProgram || !vertices || !triangleCount || triangleCount > UINT32_MAX / 3) return;
+     id<MTLRenderPipelineState> pipeline = sProgram->pipeline[sAlpha ? 1 : 0];
+     if (!pipeline) return;
+     if (floatCount > METAL_MAX_BUFFER_BYTES / sizeof(float)) return;
+@@ -408,7 +412,7 @@ static void metal_start_frame(void) {
+     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+     pass.depthAttachment.clearDepth = 1.0;
+     sEncoder = [sCommandBuffer renderCommandEncoderWithDescriptor:pass];
+-    sAlpha = false; sDepthEnabled = true; sDepthWrite = true; sDecal = false;
++    sAlpha = false; sDepthEnabled = true; sDepthWrite = true; sDecal = false; sScissorEmpty = false;
+ }
+ static void metal_end_frame(void) {
+     if (sEncoder) { [sEncoder endEncoding]; sEncoder = nil; }
+diff --git a/src/pc/gfx/gfx_metal_coopdx_rect.h b/src/pc/gfx/gfx_metal_coopdx_rect.h
+new file mode 100644
+index 00000000..c966f024
+--- /dev/null
++++ b/src/pc/gfx/gfx_metal_coopdx_rect.h
+@@ -0,0 +1,33 @@
++#ifndef GFX_METAL_COOPDX_RECT_H
++#define GFX_METAL_COOPDX_RECT_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++struct GfxMetalCoopDXScissorRect {
++    uint32_t x;
++    uint32_t y;
++    uint32_t width;
++    uint32_t height;
++};
++
++/* Clip top-left-origin renderer coordinates, then convert to Metal's bottom-left origin. */
++static inline bool gfx_metal_coopdx_clip_scissor(
++    int x, int y, int width, int height, uint32_t target_width,
++    uint32_t target_height, struct GfxMetalCoopDXScissorRect *result) {
++    if (!result || width <= 0 || height <= 0 || target_width == 0 || target_height == 0) return false;
++    int64_t x0 = x, y0 = y;
++    int64_t x1 = x0 + (int64_t)width, y1 = y0 + (int64_t)height;
++    if (x0 < 0) x0 = 0;
++    if (y0 < 0) y0 = 0;
++    if (x1 > target_width) x1 = target_width;
++    if (y1 > target_height) y1 = target_height;
++    if (x0 >= x1 || y0 >= y1 || x0 >= target_width || y0 >= target_height) return false;
++    result->x = (uint32_t)x0;
++    result->y = target_height - (uint32_t)y1;
++    result->width = (uint32_t)(x1 - x0);
++    result->height = (uint32_t)(y1 - y0);
++    return true;
++}
++
++#endif
+diff --git a/tests/gfx_metal_coopdx_shader_test.c b/tests/gfx_metal_coopdx_shader_test.c
+index 6fdb17da..fad4e82f 100644
+--- a/tests/gfx_metal_coopdx_shader_test.c
++++ b/tests/gfx_metal_coopdx_shader_test.c
+@@ -3,6 +3,7 @@
+ #include <string.h>
+ 
+ #include "pc/gfx/gfx_metal_coopdx_shader.h"
++#include "pc/gfx/gfx_metal_coopdx_rect.h"
+ #include "pc/gfx/gfx_metal_coopdx_stream.h"
+ #include "pc/gfx/gfx_pc.h"
+ 
+@@ -12,6 +13,18 @@ void gfx_pc_precomp_shader(uint32_t rgb1, uint32_t alpha1,
+ }
+ 
+ int main(int argc, char **argv) {
++    struct GfxMetalCoopDXScissorRect scissor;
++    assert(gfx_metal_coopdx_clip_scissor(10, 20, 30, 40, 100, 80, &scissor));
++    assert(scissor.x == 10 && scissor.y == 20 && scissor.width == 30 && scissor.height == 40);
++    assert(gfx_metal_coopdx_clip_scissor(-10, -5, 30, 20, 100, 80, &scissor));
++    assert(scissor.x == 0 && scissor.y == 65 && scissor.width == 20 && scissor.height == 15);
++    assert(gfx_metal_coopdx_clip_scissor(90, 70, 30, 30, 100, 80, &scissor));
++    assert(scissor.x == 90 && scissor.y == 0 && scissor.width == 10 && scissor.height == 10);
++    assert(!gfx_metal_coopdx_clip_scissor(-40, 0, 20, 20, 100, 80, &scissor));
++    assert(!gfx_metal_coopdx_clip_scissor(0, 0, 0, 10, 100, 80, &scissor));
++    assert(!gfx_metal_coopdx_clip_scissor(INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX,
++                                         100, 80, &scissor));
++
+     struct GfxMetalCoopDXVertexStream stream = { 0 };
+     size_t stream_offset = SIZE_MAX;
+     assert(gfx_metal_coopdx_vertex_stream_reserve(&stream, 48, 16, 256, 512, &stream_offset));
+-- 
+2.56.1
+

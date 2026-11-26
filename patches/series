@@ -13,3 +13,4 @@
 0013-Enable-ROM-free-compile-validation-and-emit-MSL-fixt.patch
 0014-Expand-host-combiner-parity-coverage.patch
 0015-Protect-in-flight-Metal-vertex-and-depth-resources.patch
+0016-Clip-Metal-scissor-rectangles-to-drawable-bounds.patch
