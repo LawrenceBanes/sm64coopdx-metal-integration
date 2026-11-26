@@ -1,0 +1,41 @@
+From c1e42e6b839b7eefdc2906b59cce8420788584c0 Mon Sep 17 00:00:00 2001
+From: SHITBOX LABZ Mission 10 <mission10@localhost>
+Date: Thu, 26 Nov 2026 11:35:38 -0600
+Subject: [PATCH] Record Mission 10 GitHub dispatch blocker
+
+---
+ HANDOFF.md             | 4 ++++
+ MISSION_10_PROGRESS.md | 8 ++++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 570a7f67..573515e3 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -50,3 +50,7 @@ The private overlay branch `mission-09-final-assembly` was last independently ve
+ Overlay patch 29 fixes SDL2 header discovery by obtaining compiler flags from `pkg-config sdl2` and retains patch 28's Lua include path. It was validated locally in the exact 29-patch materialization: Linux `make -j2` completed, and the Metal shader adapter, SDL Metal layer lifecycle, texture-cache rewind, and touchscreen-math tests passed normally and under ASan/UBSan (leak detection disabled in this sandbox). The materialized tree is `f9722948b63a5263014a0d2eba973fc6240baf13`. These results do not establish an Apple compile or IPA.
+ 
+ The workflow now runs `ios-arm64` independently of the host job. This keeps Linux regression failures visible without suppressing the separate Apple toolchain result. The next checkpoint must publish the updated overlay and dispatch one manual workflow. Until a successful macOS build and IPA validation are recorded, full iPhoneOS compilation and IPA packaging remain unverified.
++
++## Mission 10 dispatch status
++
++The patch-30 overlay checkpoint was pushed to `mission-09-final-assembly` as `5342cfc83b22c24f7d69b476fcaaa5bafda76456`; GitHub comparison confirmed the branch points to that commit. The workflow and `materialize.sh` were fetched from that ref and verified to contain independent `host`/`ios-arm64` jobs and expected source tree `bc7acad6eaf9d1b185c32ee75b953469bba14063`. No workflow run is associated with the commit. A single `gh workflow run ios-metal.yml --repo LawrenceBanes/sm64coopdx-metal-integration --ref mission-09-final-assembly` attempt failed with `error connecting to api.github.com`; `gh auth status` reports the cached token invalid and DNS resolution temporarily failing. The browser access host is unavailable, and the connected GitHub tool does not expose a manual workflow-dispatch operation. Therefore Apple compilation, IPA production, and IPA validation remain blocked pending restored authenticated network dispatch.
+diff --git a/MISSION_10_PROGRESS.md b/MISSION_10_PROGRESS.md
+index b5b106aa..42ace551 100644
+--- a/MISSION_10_PROGRESS.md
++++ b/MISSION_10_PROGRESS.md
+@@ -16,3 +16,11 @@
+ 3. Publish without force and verify branch HEAD.
+ 4. Attempt one manual `ios-metal.yml` dispatch; if the current session cannot reach GitHub, preserve the commit and report that exact external blocker rather than claiming a run.
+ 5. On successful Apple run, inspect full logs and IPA evidence before reporting build success.
++
++## Dispatch attempt — 2026-11-26
++
++- Pushed overlay commit: `5342cfc83b22c24f7d69b476fcaaa5bafda76456`. GitHub compare reports branch `mission-09-final-assembly` identical to that SHA.
++- Independently fetched workflow and materializer at that branch. Workflow has both `host` and `ios-arm64` jobs and no `needs` dependency; materializer expects tree `bc7acad6eaf9d1b185c32ee75b953469bba14063`.
++- GitHub reports no workflow runs for the pushed commit.
++- One manual dispatch attempt with `gh workflow run` failed before contacting the API: `error connecting to api.github.com`. `gh auth status` reports invalid cached token and temporary DNS lookup failure. CUA/browser host is unavailable; GitHub connector exposes no dispatch action.
++- No CI rerun or IPA has been produced. Resume with a manual dispatch after GitHub DNS/auth connectivity is restored; do not infer Apple build success from the passing local suite.
+-- 
+2.56.1
+
