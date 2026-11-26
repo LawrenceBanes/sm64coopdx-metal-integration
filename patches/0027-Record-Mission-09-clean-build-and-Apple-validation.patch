@@ -1,0 +1,75 @@
+From d39fbc3c36edab27b402fd47cd548e9cf574290e Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Wed, 25 Nov 2026 23:29:04 -0600
+Subject: [PATCH] Record Mission 09 clean build and Apple component results
+
+---
+ HANDOFF.md             |  2 +-
+ MISSION_09_PROGRESS.md | 13 +++++++------
+ VALIDATION.md          |  6 +++---
+ 3 files changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 0c969a7d..152aabcb 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -2,7 +2,7 @@
+ 
+ ## Mission 09 checkpoint
+ 
+-Current source branch: `mission-09-final-assembly`. It starts from Mission 07–08 checkpoint `2bc9d557fe5f6e20842b4dc2985bf87b806ab459`; final Mission 09 validation and push details are in [MISSION_09_PROGRESS.md](MISSION_09_PROGRESS.md). The source checkout has only the upstream CoopDX remote, which must not be used for publishing. The private patch-only integration remote is `LawrenceBanes/sm64coopdx-metal-integration`.
++Current source branch: `mission-09-final-assembly`. It starts from Mission 07–08 checkpoint `2bc9d557fe5f6e20842b4dc2985bf87b806ab459`; its validated implementation checkpoint is `d2fabbb9ae4e984c616e74bc4b5aec008eb62d4b`, with final validation and push details in [MISSION_09_PROGRESS.md](MISSION_09_PROGRESS.md). The source checkout has only the upstream CoopDX remote, which must not be used for publishing. The private patch-only integration branch is `LawrenceBanes/sm64coopdx-metal-integration:mission-09-final-assembly`.
+ 
+ Mission 07–08 source work is preserved in the Mission 09 branch. Focused renderer/touch tests and ASan/UBSan checks pass; the complete Linux build and clean overlay reproduction are being validated for this checkpoint. Apple component-only CI is recorded below; no full iOS app build, IPA, or iPhone runtime result exists.
+ 
+diff --git a/MISSION_09_PROGRESS.md b/MISSION_09_PROGRESS.md
+index bdd26cab..e9a8ff7b 100644
+--- a/MISSION_09_PROGRESS.md
++++ b/MISSION_09_PROGRESS.md
+@@ -17,16 +17,17 @@ Branch `mission-09-final-assembly` preserves the Mission 07–08 implementation
+ - Public Apple harness runs `45757822398` and `45758034420` passed component-only iPhoneOS/ARM64 compilation, SDL/Metal adapter stub-contract linking, and generated MSL validation. They do not compile or link the complete CoopDX app.
+ - Full app Apple compilation and IPA packaging remain blocked: the available private Actions route has the account spending restriction; public full-source publishing is not justified because no redistribution license for the upstream iOS source was identified; no reachable Mac host is available. No workaround was attempted.
+ - No physical iPhone rendering, safe-area/orientation layout, touch feel, DynOS GPU rendering, or Metal resource lifetime has been verified on hardware.
+-- `make test` requires `mupen64plus`, which is absent. The full Linux build and focused regression suite are the available host evidence.
++- `make test` was attempted and fails at `mupen64plus --noosd`: executable not found (error 127). The full Linux build and focused regression suite are the available host evidence.
+ 
+ ## Delivery record
+ 
+ Delivery status:
+ 
+-- Source branch/commit: `mission-09-final-assembly` / recorded in the final handoff.
+-- Private overlay branch/commit: pending push verification.
+-- Materialized source tree: recorded in the final handoff.
+-- Clean materialized `make -j2`: exit 0; linked `build/us_pc/sm64coopdx`.
++- Source branch: `mission-09-final-assembly`, implementation checkpoint `d2fabbb9ae4e984c616e74bc4b5aec008eb62d4b` (documentation-only follow-up may advance HEAD).
++- Private overlay: `LawrenceBanes/sm64coopdx-metal-integration`, branch `mission-09-final-assembly`; implementation patch series pushed at `187fc1a5c5507ae57ece3343f03495b382abc32d`, and `git ls-remote` confirmed that remote ref.
++- Clean `materialize.sh` reproduced tree `5e251076f21438f9425979b175bee3b70400e96d` from pinned upstream plus 26 patches.
++- `make -j2` in the clean materialization exited 0 and linked `build/us_pc/sm64coopdx`.
++- `make test` — unavailable because `mupen64plus` is not installed (error 127).
+ - Focused tests: pass, normal and ASan/UBSan.
+-- Apple component CI: runs `45757822398`, `45758034420` passed; no full app workflow.
++- Apple component CI: [run 45761492592](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45761492592) passed on `macos-15`, including iPhoneOS ARM64 touch-math compilation, sanitizer tests, Metal adapter compilation, and MSL compilation. Prior component runs `45757822398` and `45758034420` also passed.
+ - iPhone/IPA: unavailable; not claimed.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 9eb9ad96..386472ac 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -2,12 +2,12 @@
+ 
+ ## Mission 09 integration checkpoint
+ 
+-- `make -j2` — run on the clean materialized patch-overlay tree; final status is recorded in `MISSION_09_PROGRESS.md`.
++- `make -j2` — passed from a clean materialization, linked `build/us_pc/sm64coopdx`; exact source tree is recorded in `MISSION_09_PROGRESS.md`.
+ - `tests/run_gfx_metal_coopdx_shader_test.sh`, `tests/run_gfx_sdl_metal_layer_test.sh`, `tests/run_gfx_texture_cache_rewind_test.sh`, and `tests/run_touchscreen_controls_math_test.sh` — passed on the clean materialized tree.
+ - The same four test scripts with `SANITIZE=1 CC=clang` — passed under ASan/UBSan.
+ - `git diff --check` — passed.
+-- Full `make test` is not represented as passing: its upstream target requires the unavailable `mupen64plus` executable. This does not block the Linux compile/link or focused tests.
+-- Exact clean-tree reproduction and Apple/full-app status are documented in `MISSION_09_PROGRESS.md`. No iPhone visual/input validation is claimed.
++- Full `make test` was attempted and is blocked because upstream's test target invokes the unavailable `mupen64plus` executable (error 127). This does not block the Linux compile/link or focused tests.
++- Public Apple component run [45761492592](https://github.com/LawrenceBanes/sm64coopdx-metal-build/actions/runs/45761492592) passed iPhoneOS ARM64 compilation of the portable touchscreen math plus existing Metal/SDL component and MSL checks. It does not build the full app. Exact clean-tree reproduction and Apple/full-app status are documented in `MISSION_09_PROGRESS.md`. No iPhone visual/input validation is claimed.
+ 
+ ## Mission 07–08 working checkpoint (`mission-07-08-metal-after-dark`)
+ 
+-- 
+2.56.1
+
